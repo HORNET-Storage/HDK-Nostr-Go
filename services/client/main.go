@@ -128,6 +128,44 @@ func UploadDag(ctx context.Context, path string) {
 	client.Disconnect()
 }
 
+func DownloadDag(ctx context.Context, root string) {
+	// Connect to a hornet storage node
+	publicKey := "12D3KooWK5w15heWibLQ7KUeKvVwbq8dTaSmad9FxaVD6jtUCT3j"
+
+	ctx, client, err := connmgr.Connect(ctx, "0.0.0.0", "9000", publicKey)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Upload the dag to the hornet storage node
+	ctx, dag, err := client.DownloadDag(ctx, root)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	encoding, _, err := multibase.Decode(dag.Root)
+	if err != nil {
+		return
+	}
+
+	encoder := multibase.MustNewEncoder(encoding)
+
+	// Verify the entire dag
+	result, err := dag.Verify(encoder)
+	if err != nil {
+		log.Fatalf("Error: %s", err)
+	}
+
+	if result {
+		log.Println("Dag verified correctly")
+	} else {
+		log.Fatal("Dag failed to verify")
+	}
+
+	// Disconnect client as we no longer need it
+	client.Disconnect()
+}
+
 func GenerateKeys(ctx context.Context) {
 	privateKey, err := hornet_rsa.CreateKeyPair()
 	if err != nil {

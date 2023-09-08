@@ -13,6 +13,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
 	"github.com/multiformats/go-multiaddr"
+	"github.com/multiformats/go-multibase"
 
 	types "github.com/HORNET-Storage/go-hornet-storage-lib/lib"
 	merkle_dag "github.com/HORNET-Storage/scionic-merkletree/dag"
@@ -145,7 +146,7 @@ func (client *Client) UploadDag(ctx context.Context, dag *merkle_dag.Dag) (conte
 	count := len(dag.Leafs)
 
 	for _, leaf := range dag.Leafs {
-		message := types.DagLeafMessage{
+		message := types.UploadMessage{
 			Root:  dag.Root,
 			Count: count,
 			Leaf:  *leaf,
@@ -162,4 +163,64 @@ func (client *Client) UploadDag(ctx context.Context, dag *merkle_dag.Dag) (conte
 	stream.Close()
 
 	return ctx, nil
+}
+
+func (client *Client) DownloadDag(ctx context.Context, root string) (context.Context, *merkle_dag.Dag, error) {
+	ctx, stream, err := client.openStream(ctx, DownloadV1)
+	if err != nil {
+		return ctx, nil, err
+	}
+
+	enc := cbor.NewEncoder(stream)
+	dec := cbor.NewDecoder(stream)
+
+	message := types.DownloadMessage{
+		Root: root,
+	}
+
+	if err := enc.Encode(&message); err != nil {
+		return ctx, nil, err
+	}
+
+	var rootLeafMessage types.UploadMessage
+
+	timeout := time.NewTimer(5 * time.Second)
+
+wait:
+	for {
+		select {
+		case <-timeout.C:
+			stream.Close()
+			return ctx, nil, fmt.Errorf("Failed to receieve root leaf message")
+		default:
+			if err := dec.Decode(&rootLeafMessage); err == nil {
+				break wait
+			}
+		}
+	}
+
+	encoding, _, err := multibase.Decode(rootLeafMessage.Root)
+	if err != nil {
+		return ctx, nil, err
+	}
+
+	encoder := multibase.MustNewEncoder(encoding)
+
+	result, err := rootLeafMessage.Leaf.VerifyLeaf(encoder)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if !result {
+		err := fmt.Errorf("Failed to verify root leaf: %s\n", rootLeafMessage.Leaf.Hash)
+
+		stream.Close()
+		return ctx, nil, err
+	}
+
+	builder := merkle_dag.CreateDagBuilder()
+
+	builder.AddLeaf(&rootLeafMessage.Leaf, encoder, nil)
+
+	return ctx, nil, nil
 }
