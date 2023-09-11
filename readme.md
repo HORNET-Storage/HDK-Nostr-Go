@@ -6,7 +6,7 @@ The library includes a very basic connection manager to help users handle being 
 
 ## Documentation
 
-Documentation coming soon
+Documentation coming soon.
 
 ## Disclaimer
 ⚠️ **Warning**: This library is currently in its development phase. It is not yet stable and is not recommended for production use. Users are advised to exercise caution. This repository will progress more as we develop Hornet Storage. More comprehensive information will be provided soon.
