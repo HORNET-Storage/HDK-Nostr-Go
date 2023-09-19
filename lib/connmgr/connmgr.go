@@ -145,24 +145,153 @@ func (client *Client) UploadDag(ctx context.Context, dag *merkle_dag.Dag) (conte
 	enc := cbor.NewEncoder(stream)
 	count := len(dag.Leafs)
 
-	for _, leaf := range dag.Leafs {
-		message := types.UploadMessage{
-			Root:  dag.Root,
-			Count: count,
-			Leaf:  *leaf,
-		}
+	rootLeaf := dag.Leafs[dag.Root]
 
-		if err := enc.Encode(&message); err != nil {
-			return nil, err
-		}
+	message := types.UploadMessage{
+		Root:  dag.Root,
+		Count: count,
+		Leaf:  *rootLeaf,
+	}
 
-		// Temporary solution to ensure all data gets written to the stream
-		time.Sleep(10 * time.Millisecond)
+	if err := enc.Encode(&message); err != nil {
+		return nil, err
+	}
+
+	log.Println("Uploaded root leaf")
+
+	if result := WaitForResponse(ctx, stream); !result {
+		stream.Close()
+
+		return ctx, fmt.Errorf("Did not recieve a valid response")
+	}
+
+	log.Println("Response received")
+
+	err = UploadLeafChildren(ctx, stream, rootLeaf, dag)
+	if err != nil {
+		log.Printf("Failed to upload leaf children: %e", err)
+
+		stream.Close()
+
+		return ctx, err
 	}
 
 	stream.Close()
 
+	log.Println("Dag has been uploaded")
+
 	return ctx, nil
+}
+
+func UploadLeafChildren(ctx context.Context, stream network.Stream, leaf *merkle_dag.DagLeaf, dag *merkle_dag.Dag) error {
+	streamEncoder := cbor.NewEncoder(stream)
+
+	encoding, _, err := multibase.Decode(dag.Root)
+	if err != nil {
+		log.Println("Failed to discover encoding")
+		return err
+	}
+
+	encoder := multibase.MustNewEncoder(encoding)
+
+	count := len(dag.Leafs)
+
+	for _, hash := range leaf.Links {
+		child, exists := dag.Leafs[hash]
+		if !exists {
+			return fmt.Errorf("Leaf with has does not exist in dag")
+		}
+
+		result, err := child.VerifyLeaf(encoder)
+		if err != nil {
+			log.Println("Failed to verify leaf")
+			return err
+		}
+
+		if !result {
+			return fmt.Errorf("Failed to verify leaf")
+		}
+
+		//branch, err := leaf.GetBranch(label)
+		//if err != nil {
+		//	log.Println("Failed to get branch")
+		//	return err
+		//}
+
+		//result, err = leaf.VerifyBranch(branch)
+		//if err != nil {
+		//	log.Println("Failed to verify branch")
+		//	return err
+		//}
+
+		//if !result {
+		//	return fmt.Errorf("Failed to verify branch for leaf")
+		//}
+
+		message := types.UploadMessage{
+			Root:   dag.Root,
+			Count:  count,
+			Leaf:   *child,
+			Parent: leaf.Hash,
+			//Branch: branch,
+		}
+
+		if err := streamEncoder.Encode(&message); err != nil {
+			log.Println("Failed to encode to stream")
+			return err
+		}
+
+		log.Println("Uploaded next leaf")
+
+		if result = WaitForResponse(ctx, stream); !result {
+			return fmt.Errorf("Did not recieve a valid response")
+		}
+
+		log.Println("Response recieved")
+	}
+
+	for _, hash := range leaf.Links {
+		child, exists := dag.Leafs[hash]
+		if !exists {
+			return fmt.Errorf("Leaf with hash does not exist in dag")
+		}
+
+		if len(child.Links) > 0 {
+			err = UploadLeafChildren(ctx, stream, child, dag)
+			if err != nil {
+				log.Println("Failed to Upload Leaf Children")
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func WaitForResponse(ctx context.Context, stream network.Stream) bool {
+	streamDecoder := cbor.NewDecoder(stream)
+
+	var response types.ResponseMessage
+
+	timeout := time.NewTimer(5 * time.Second)
+
+wait:
+	for {
+		select {
+		case <-timeout.C:
+			return false
+		default:
+			if err := streamDecoder.Decode(&response); err == nil {
+				break wait
+			}
+		}
+	}
+
+	if !response.Ok {
+		return false
+	}
+
+	return true
 }
 
 func (client *Client) DownloadDag(ctx context.Context, root string) (context.Context, *merkle_dag.Dag, error) {
