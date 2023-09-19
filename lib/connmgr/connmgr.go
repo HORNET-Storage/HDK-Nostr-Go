@@ -196,7 +196,7 @@ func UploadLeafChildren(ctx context.Context, stream network.Stream, leaf *merkle
 
 	count := len(dag.Leafs)
 
-	for _, hash := range leaf.Links {
+	for label, hash := range leaf.Links {
 		child, exists := dag.Leafs[hash]
 		if !exists {
 			return fmt.Errorf("Leaf with has does not exist in dag")
@@ -212,28 +212,32 @@ func UploadLeafChildren(ctx context.Context, stream network.Stream, leaf *merkle
 			return fmt.Errorf("Failed to verify leaf")
 		}
 
-		//branch, err := leaf.GetBranch(label)
-		//if err != nil {
-		//	log.Println("Failed to get branch")
-		//	return err
-		//}
+		var branch *merkle_dag.ClassicTreeBranch
 
-		//result, err = leaf.VerifyBranch(branch)
-		//if err != nil {
-		//	log.Println("Failed to verify branch")
-		//	return err
-		//}
+		if len(leaf.Links) > 1 {
+			branch, err = leaf.GetBranch(label)
+			if err != nil {
+				log.Println("Failed to get branch")
+				return err
+			}
 
-		//if !result {
-		//	return fmt.Errorf("Failed to verify branch for leaf")
-		//}
+			result, err = leaf.VerifyBranch(branch)
+			if err != nil {
+				log.Println("Failed to verify branch")
+				return err
+			}
+
+			if !result {
+				return fmt.Errorf("Failed to verify branch for leaf")
+			}
+		}
 
 		message := types.UploadMessage{
 			Root:   dag.Root,
 			Count:  count,
 			Leaf:   *child,
 			Parent: leaf.Hash,
-			//Branch: branch,
+			Branch: branch,
 		}
 
 		if err := streamEncoder.Encode(&message); err != nil {
