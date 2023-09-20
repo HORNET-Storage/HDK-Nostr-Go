@@ -3,6 +3,7 @@ package connmgr
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/multiformats/go-multiaddr"
 	"github.com/multiformats/go-multibase"
 
+	"github.com/HORNET-Storage/go-hornet-storage-lib/lib"
 	types "github.com/HORNET-Storage/go-hornet-storage-lib/lib"
 	merkle_dag "github.com/HORNET-Storage/scionic-merkletree/dag"
 )
@@ -272,6 +274,137 @@ func UploadLeafChildren(ctx context.Context, stream network.Stream, leaf *merkle
 	return nil
 }
 
+// Download dag from single hornet node
+func (client *Client) DownloadDag(ctx context.Context, root string) (context.Context, *merkle_dag.Dag, error) {
+	ctx, stream, err := client.openStream(ctx, DownloadV1)
+	if err != nil {
+		return ctx, nil, err
+	}
+
+	streamEncoder := cbor.NewEncoder(stream)
+
+	downloadMessage := types.DownloadMessage{
+		Root: root,
+	}
+
+	if err := streamEncoder.Encode(&downloadMessage); err != nil {
+		return ctx, nil, err
+	}
+
+	builder := merkle_dag.CreateDagBuilder()
+
+	result, message := WaitForUploadMessage(ctx, stream)
+	if !result {
+		log.Println("Failed to recieve upload message in time")
+
+		return ctx, nil, err
+	}
+
+	log.Println("Recieved upload message")
+
+	encoding, _, err := multibase.Decode(message.Root)
+	if err != nil {
+		log.Println("Failed to discover encoding from root hash")
+
+		return ctx, nil, err
+	}
+
+	encoder := multibase.MustNewEncoder(encoding)
+
+	result, err = message.Leaf.VerifyRootLeaf(encoder)
+	if err != nil || !result {
+		log.Println("Failed to verify root leaf")
+
+		return ctx, nil, err
+	}
+
+	builder.AddLeaf(&message.Leaf, encoder, nil)
+
+	log.Println("Processed root leaf")
+
+	err = WriteResponseToStream(ctx, stream, true)
+	if err != nil || !result {
+		log.Println("Failed to write response to stream")
+
+		return ctx, nil, err
+	}
+
+	for {
+		log.Println("Waiting for upload message")
+
+		result, message := WaitForUploadMessage(ctx, stream)
+		if !result {
+			log.Println("Failed to recieve upload message in time")
+
+			break
+		}
+
+		log.Println("Recieved upload message")
+
+		encoding, _, err := multibase.Decode(message.Root)
+		if err != nil {
+			log.Println("Failed to discover encoding from root hash")
+
+			break
+		}
+
+		encoder := multibase.MustNewEncoder(encoding)
+
+		result, err = message.Leaf.VerifyLeaf(encoder)
+		if err != nil || !result {
+			log.Println("Failed to verify leaf")
+
+			break
+		}
+
+		parent, exists := builder.Leafs[message.Parent]
+		if err != nil || !exists {
+			log.Println("Failed to find parent leaf")
+
+			break
+		}
+
+		if message.Branch != nil {
+			result, err = parent.VerifyBranch(message.Branch)
+			if err != nil || !result {
+				log.Println("Failed to verify leaf branch")
+
+				break
+			}
+		}
+
+		builder.AddLeaf(&message.Leaf, encoder, parent)
+
+		log.Printf("Processed leaf: %s\n", message.Leaf.Hash)
+
+		err = WriteResponseToStream(ctx, stream, true)
+		if err != nil || !result {
+			log.Println("Failed to write response to stream")
+
+			break
+		}
+	}
+
+	log.Println("Building and verifying dag")
+
+	dag := builder.BuildDag(message.Root)
+
+	result, err = dag.Verify(encoder)
+	if err != nil {
+		log.Println("Failed to verify dag")
+
+		return ctx, nil, err
+	}
+
+	if !result {
+		log.Printf("Failed to verify dag: %s\n", message.Root)
+	}
+
+	log.Println("Download finished")
+
+	return ctx, dag, nil
+}
+
 func WaitForResponse(ctx context.Context, stream network.Stream) bool {
 	streamDecoder := cbor.NewDecoder(stream)
 
@@ -298,24 +431,10 @@ wait:
 	return true
 }
 
-func (client *Client) DownloadDag(ctx context.Context, root string) (context.Context, *merkle_dag.Dag, error) {
-	ctx, stream, err := client.openStream(ctx, DownloadV1)
-	if err != nil {
-		return ctx, nil, err
-	}
+func WaitForUploadMessage(ctx context.Context, stream network.Stream) (bool, *lib.UploadMessage) {
+	streamDecoder := cbor.NewDecoder(stream)
 
-	enc := cbor.NewEncoder(stream)
-	dec := cbor.NewDecoder(stream)
-
-	message := types.DownloadMessage{
-		Root: root,
-	}
-
-	if err := enc.Encode(&message); err != nil {
-		return ctx, nil, err
-	}
-
-	var rootLeafMessage types.UploadMessage
+	var message types.UploadMessage
 
 	timeout := time.NewTimer(5 * time.Second)
 
@@ -323,37 +442,37 @@ wait:
 	for {
 		select {
 		case <-timeout.C:
-			stream.Close()
-			return ctx, nil, fmt.Errorf("Failed to receieve root leaf message")
+			return false, nil
 		default:
-			if err := dec.Decode(&rootLeafMessage); err == nil {
+			err := streamDecoder.Decode(&message)
+
+			if err != nil {
+				log.Printf("Error reading from stream: %e", err)
+			}
+
+			if err == io.EOF {
+				return false, nil
+			}
+
+			if err == nil {
 				break wait
 			}
 		}
 	}
 
-	encoding, _, err := multibase.Decode(rootLeafMessage.Root)
-	if err != nil {
-		return ctx, nil, err
+	return true, &message
+}
+
+func WriteResponseToStream(ctx context.Context, stream network.Stream, response bool) error {
+	streamEncoder := cbor.NewEncoder(stream)
+
+	message := types.ResponseMessage{
+		Ok: response,
 	}
 
-	encoder := multibase.MustNewEncoder(encoding)
-
-	result, err := rootLeafMessage.Leaf.VerifyLeaf(encoder)
-	if err != nil {
-		log.Fatal(err)
+	if err := streamEncoder.Encode(&message); err != nil {
+		return err
 	}
 
-	if !result {
-		err := fmt.Errorf("Failed to verify root leaf: %s\n", rootLeafMessage.Leaf.Hash)
-
-		stream.Close()
-		return ctx, nil, err
-	}
-
-	builder := merkle_dag.CreateDagBuilder()
-
-	builder.AddLeaf(&rootLeafMessage.Leaf, encoder, nil)
-
-	return ctx, nil, nil
+	return nil
 }
