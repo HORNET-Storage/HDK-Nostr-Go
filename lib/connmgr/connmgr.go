@@ -149,34 +149,128 @@ func (client *Client) UploadDag(ctx context.Context, dag *merkle_dag.Dag) (conte
 
 	rootLeaf := dag.Leafs[dag.Root]
 
-	message := types.UploadMessage{
-		Root:  dag.Root,
-		Count: count,
-		Leaf:  *rootLeaf,
-	}
+	streamEncoder := cbor.NewEncoder(stream)
 
-	if err := enc.Encode(&message); err != nil {
+	encoding, _, err := multibase.Decode(dag.Root)
+	if err != nil {
+		log.Println("Failed to discover encoding")
 		return nil, err
 	}
 
-	log.Println("Uploaded root leaf")
+	encoder := multibase.MustNewEncoder(encoding)
 
-	if result := WaitForResponse(ctx, stream); !result {
-		stream.Close()
+	err = dag.IterateDag(func(leaf *merkle_dag.DagLeaf, parent *merkle_dag.DagLeaf) {
+		if leaf.Hash == dag.Root {
+			message := types.UploadMessage{
+				Root:  dag.Root,
+				Count: count,
+				Leaf:  *rootLeaf,
+			}
 
-		return ctx, fmt.Errorf("Did not recieve a valid response")
-	}
+			if err := enc.Encode(&message); err != nil {
+				return //nil, err
+			}
 
-	log.Println("Response received")
+			log.Println("Uploaded root leaf")
 
-	err = UploadLeafChildren(ctx, stream, rootLeaf, dag)
+			if result := WaitForResponse(ctx, stream); !result {
+				stream.Close()
+
+				return //ctx, fmt.Errorf("Did not recieve a valid response")
+			}
+
+			log.Println("Response received")
+		} else {
+			result, err := leaf.VerifyLeaf(encoder)
+			if err != nil {
+				log.Println("Failed to verify leaf")
+				return //err
+			}
+
+			if !result {
+				return //fmt.Errorf("Failed to verify leaf")
+			}
+
+			label := merkle_dag.GetLabel(leaf.Hash)
+
+			var branch *merkle_dag.ClassicTreeBranch
+
+			if len(leaf.Links) > 1 {
+				branch, err = parent.GetBranch(label)
+				if err != nil {
+					log.Println("Failed to get branch")
+					return //err
+				}
+
+				result, err = parent.VerifyBranch(branch)
+				if err != nil {
+					log.Println("Failed to verify branch")
+					return //err
+				}
+
+				if !result {
+					return //fmt.Errorf("Failed to verify branch for leaf")
+				}
+			}
+
+			message := types.UploadMessage{
+				Root:   dag.Root,
+				Count:  count,
+				Leaf:   *leaf,
+				Parent: parent.Hash,
+				Branch: branch,
+			}
+
+			if err := streamEncoder.Encode(&message); err != nil {
+				log.Println("Failed to encode to stream")
+				return //err
+			}
+
+			log.Println("Uploaded next leaf")
+
+			if result = WaitForResponse(ctx, stream); !result {
+				return //fmt.Errorf("Did not recieve a valid response")
+			}
+
+			log.Println("Response recieved")
+		}
+	})
+
 	if err != nil {
-		log.Printf("Failed to upload leaf children: %e", err)
-
-		stream.Close()
-
-		return ctx, err
+		return nil, err
 	}
+
+	/*
+			message := types.UploadMessage{
+				Root:  dag.Root,
+				Count: count,
+				Leaf:  *rootLeaf,
+			}
+
+			if err := enc.Encode(&message); err != nil {
+				return nil, err
+			}
+
+			log.Println("Uploaded root leaf")
+
+			if result := WaitForResponse(ctx, stream); !result {
+				stream.Close()
+
+				return ctx, fmt.Errorf("Did not recieve a valid response")
+			}
+
+			log.Println("Response received")
+
+
+		err = UploadLeafChildren(ctx, stream, rootLeaf, dag)
+		if err != nil {
+			log.Printf("Failed to upload leaf children: %e", err)
+
+			stream.Close()
+
+			return ctx, err
+		}
+	*/
 
 	stream.Close()
 

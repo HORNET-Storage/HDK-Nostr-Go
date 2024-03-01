@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"context"
 	"crypto/rsa"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -52,6 +53,7 @@ func RunCommandWatcher(ctx context.Context) {
 			log.Println("generate")
 			log.Println("parse")
 			log.Println("upload")
+			log.Println("download")
 			log.Println("shutdown")
 		case "generate":
 			GenerateKeys(ctx)
@@ -59,6 +61,8 @@ func RunCommandWatcher(ctx context.Context) {
 			ParseKeys(ctx)
 		case "upload":
 			UploadDag(ctx, segments[1])
+		case "download":
+			DownloadDag(ctx, segments[1])
 		case "shutdown":
 			log.Println("Shutting down")
 			Cleanup(ctx)
@@ -84,20 +88,6 @@ func UploadDag(ctx context.Context, path string) {
 	// Get the encoder based on the dag root
 	encoder := multibase.MustNewEncoder(multibase.Base64)
 
-	// Verify each leaf individually
-	for _, leaf := range dag.Leafs {
-		result, err := leaf.VerifyLeaf(encoder)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		if result {
-			log.Println("Leaf verified correctly")
-		} else {
-			log.Println("Failed to verify leaf")
-		}
-	}
-
 	// Verify the entire dag
 	result, err := dag.Verify(encoder)
 	if err != nil {
@@ -117,6 +107,13 @@ func UploadDag(ctx context.Context, path string) {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	jsonData, _ := dag.ToJSON()
+	os.WriteFile("before_upload.json", jsonData, 0644)
+
+	//IterateDag(dag, func(leaf *merkle_dag.DagLeaf) {
+	//	log.Printf("Processing leaf: %s\n", leaf.Hash)
+	//})
 
 	// Upload the dag to the hornet storage node
 	ctx, err = client.UploadDag(ctx, dag)
@@ -160,6 +157,14 @@ func DownloadDag(ctx context.Context, root string) {
 		log.Println("Dag verified correctly")
 	} else {
 		log.Fatal("Dag failed to verify")
+	}
+
+	jsonData, _ := json.Marshal(dag)
+	os.WriteFile("after_download.json", jsonData, 0644)
+
+	err = dag.CreateDirectory("D:/organizations/akashic_record/relevant/golang/output", encoder)
+	if err != nil {
+		log.Fatalf("Error: %s", err)
 	}
 
 	// Disconnect client as we no longer need it
