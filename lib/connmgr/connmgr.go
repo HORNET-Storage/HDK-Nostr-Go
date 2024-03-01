@@ -9,6 +9,7 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/libp2p/go-libp2p"
+	"github.com/libp2p/go-libp2p/config"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -43,8 +44,8 @@ func init() {
 	Clients = map[string]*Client{}
 }
 
-func Connect(ctx context.Context, ip string, port string, publicKey string) (context.Context, *Client, error) {
-	host, err := libp2p.New()
+func Connect(ctx context.Context, ip string, port string, publicKey string, opts ...config.Option) (context.Context, *Client, error) {
+	host, err := libp2p.New(opts...)
 	if err != nil {
 		return ctx, nil, err
 	}
