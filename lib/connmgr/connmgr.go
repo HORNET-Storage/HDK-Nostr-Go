@@ -127,9 +127,9 @@ func (client *Client) openStream(ctx context.Context, protocol protocol.ID) (con
 }
 
 // Upload dag to all connected hornet nodes
-func UploadDag(ctx context.Context, dag *merkle_dag.Dag) (context.Context, error) {
+func UploadDag(ctx context.Context, dag *merkle_dag.Dag, publicKey *string, signature *string) (context.Context, error) {
 	for _, client := range Clients {
-		ctx, err := client.UploadDag(ctx, dag)
+		ctx, err := client.UploadDag(ctx, dag, publicKey, signature)
 		if err != nil {
 			return ctx, err
 		}
@@ -139,7 +139,7 @@ func UploadDag(ctx context.Context, dag *merkle_dag.Dag) (context.Context, error
 }
 
 // Upload dag to a single hornet node
-func (client *Client) UploadDag(ctx context.Context, dag *merkle_dag.Dag) (context.Context, error) {
+func (client *Client) UploadDag(ctx context.Context, dag *merkle_dag.Dag, publicKey *string, signature *string) (context.Context, error) {
 	ctx, stream, err := client.openStream(ctx, UploadV1)
 	if err != nil {
 		return nil, err
@@ -166,6 +166,14 @@ func (client *Client) UploadDag(ctx context.Context, dag *merkle_dag.Dag) (conte
 				Root:  dag.Root,
 				Count: count,
 				Leaf:  *rootLeaf,
+			}
+
+			if publicKey != nil {
+				message.PublicKey = *publicKey
+			}
+
+			if signature != nil {
+				message.Signature = *signature
 			}
 
 			if err := enc.Encode(&message); err != nil {
@@ -220,6 +228,14 @@ func (client *Client) UploadDag(ctx context.Context, dag *merkle_dag.Dag) (conte
 				Leaf:   *leaf,
 				Parent: parent.Hash,
 				Branch: branch,
+			}
+
+			if publicKey != nil {
+				message.PublicKey = *publicKey
+			}
+
+			if signature != nil {
+				message.Signature = *signature
 			}
 
 			if err := streamEncoder.Encode(&message); err != nil {
@@ -370,7 +386,7 @@ func UploadLeafChildren(ctx context.Context, stream network.Stream, leaf *merkle
 }
 
 // Download dag from single hornet node
-func (client *Client) DownloadDag(ctx context.Context, root string) (context.Context, *merkle_dag.Dag, error) {
+func (client *Client) DownloadDag(ctx context.Context, root string, publicKey *string, signature *string) (context.Context, *merkle_dag.Dag, error) {
 	ctx, stream, err := client.openStream(ctx, DownloadV1)
 	if err != nil {
 		return ctx, nil, err
@@ -380,6 +396,14 @@ func (client *Client) DownloadDag(ctx context.Context, root string) (context.Con
 
 	downloadMessage := types.DownloadMessage{
 		Root: root,
+	}
+
+	if publicKey != nil {
+		downloadMessage.PublicKey = *publicKey
+	}
+
+	if signature != nil {
+		downloadMessage.Signature = *signature
 	}
 
 	if err := streamEncoder.Encode(&downloadMessage); err != nil {

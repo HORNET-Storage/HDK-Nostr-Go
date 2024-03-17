@@ -116,7 +116,7 @@ func UploadDag(ctx context.Context, path string) {
 	//})
 
 	// Upload the dag to the hornet storage node
-	ctx, err = client.UploadDag(ctx, dag)
+	ctx, err = client.UploadDag(ctx, dag, nil, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -135,7 +135,7 @@ func DownloadDag(ctx context.Context, root string) {
 	}
 
 	// Upload the dag to the hornet storage node
-	ctx, dag, err := client.DownloadDag(ctx, root)
+	ctx, dag, err := client.DownloadDag(ctx, root, nil, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
