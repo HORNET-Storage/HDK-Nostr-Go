@@ -103,7 +103,7 @@ func UploadDag(ctx context.Context, path string) {
 	// Connect to a hornet storage node
 	publicKey := "12D3KooWK5w15heWibLQ7KUeKvVwbq8dTaSmad9FxaVD6jtUCT3j"
 
-	ctx, client, err := connmgr.Connect(ctx, "0.0.0.0", "9000", publicKey)
+	ctx, client, err := connmgr.Connect(ctx, fmt.Sprintf("/ip4/127.0.0.1/tcp/9000/p2p/%s", publicKey), publicKey)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -129,7 +129,7 @@ func DownloadDag(ctx context.Context, root string) {
 	// Connect to a hornet storage node
 	publicKey := "12D3KooWK5w15heWibLQ7KUeKvVwbq8dTaSmad9FxaVD6jtUCT3j"
 
-	ctx, client, err := connmgr.Connect(ctx, "0.0.0.0", "9000", publicKey)
+	ctx, client, err := connmgr.Connect(ctx, fmt.Sprintf("/ip4/127.0.0.1/tcp/9000/p2p/%s", publicKey), publicKey)
 	if err != nil {
 		log.Fatal(err)
 	}

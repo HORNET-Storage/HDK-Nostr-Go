@@ -23,9 +23,8 @@ import (
 )
 
 type Client struct {
-	ip        *string
-	port      *string
-	publicKey *string
+	serverAddress *string
+	publicKey     *string
 
 	Host          *host.Host
 	ServerAddress *multiaddr.Multiaddr
@@ -44,13 +43,13 @@ func init() {
 	Clients = map[string]*Client{}
 }
 
-func Connect(ctx context.Context, ip string, port string, publicKey string, opts ...config.Option) (context.Context, *Client, error) {
+func Connect(ctx context.Context, serverAddress string, publicKey string, opts ...config.Option) (context.Context, *Client, error) {
 	host, err := libp2p.New(opts...)
 	if err != nil {
 		return ctx, nil, err
 	}
 
-	serverAddress := fmt.Sprintf("/ip4/%s/tcp/%s/p2p/%s", ip, port, publicKey)
+	//serverAddress := fmt.Sprintf("/ip4/%s/tcp/%s/p2p/%s", ip, port, publicKey)
 	maddr, err := multiaddr.NewMultiaddr(serverAddress)
 	if err != nil {
 		return ctx, nil, err
@@ -64,9 +63,8 @@ func Connect(ctx context.Context, ip string, port string, publicKey string, opts
 	}
 
 	client := &Client{
-		ip:        &ip,
-		port:      &port,
-		publicKey: &publicKey,
+		serverAddress: &serverAddress,
+		publicKey:     &publicKey,
 
 		Host:          &host,
 		ServerAddress: &maddr,
