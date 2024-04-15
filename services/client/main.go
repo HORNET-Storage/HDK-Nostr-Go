@@ -6,7 +6,7 @@ import (
 
 	"bufio"
 	"context"
-	"crypto/rsa"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -15,12 +15,16 @@ import (
 	"strings"
 	"syscall"
 
-	merkle_dag "github.com/HORNET-Storage/scionic-merkletree/dag"
-	"github.com/multiformats/go-multibase"
-
 	"github.com/HORNET-Storage/go-hornet-storage-lib/lib/connmgr"
-	hornet_rsa "github.com/HORNET-Storage/go-hornet-storage-lib/lib/encryption/rsa"
+	"github.com/HORNET-Storage/go-hornet-storage-lib/lib/signing"
+	merkle_dag "github.com/HORNET-Storage/scionic-merkletree/dag"
+	"github.com/libp2p/go-libp2p"
+	"github.com/libp2p/go-libp2p/core/crypto"
+	"github.com/libp2p/go-libp2p/core/peer"
+	libp2pquic "github.com/libp2p/go-libp2p/p2p/transport/quic"
 )
+
+const npub string = "npub03e950342c6942973eebe8c42279e75755bd901fb4ee77870c3a815c71e29e040c"
 
 func main() {
 	ctx := context.Background()
@@ -50,15 +54,9 @@ func RunCommandWatcher(ctx context.Context) {
 		switch segments[0] {
 		case "help":
 			log.Println("Available Commands:")
-			log.Println("generate")
-			log.Println("parse")
 			log.Println("upload")
 			log.Println("download")
 			log.Println("shutdown")
-		case "generate":
-			GenerateKeys(ctx)
-		case "parse":
-			ParseKeys(ctx)
 		case "upload":
 			UploadDag(ctx, segments[1])
 		case "download":
@@ -79,31 +77,37 @@ func Cleanup(ctx context.Context) {
 
 func UploadDag(ctx context.Context, path string) {
 	// Create a new dag from a directory
-	dag, err := merkle_dag.CreateDag(path, multibase.Base64)
+	dag, err := merkle_dag.CreateDag(path, true)
 	if err != nil {
 		fmt.Println("Error: ", err)
 		os.Exit(1)
 	}
 
-	// Get the encoder based on the dag root
-	encoder := multibase.MustNewEncoder(multibase.Base64)
-
 	// Verify the entire dag
-	result, err := dag.Verify(encoder)
+	err = dag.Verify()
 	if err != nil {
 		log.Fatalf("Error: %s", err)
 	}
 
-	if result {
-		log.Println("Dag verified correctly")
-	} else {
-		log.Fatal("Dag failed to verify")
-	}
+	log.Println("Dag verified correctly")
 
 	// Connect to a hornet storage node
-	publicKey := "12D3KooWK5w15heWibLQ7KUeKvVwbq8dTaSmad9FxaVD6jtUCT3j"
+	decodedKey, err := hex.DecodeString(signing.TrimPublicKey(npub))
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	ctx, client, err := connmgr.Connect(ctx, fmt.Sprintf("/ip4/127.0.0.1/tcp/9000/p2p/%s", publicKey), publicKey)
+	publicKey, err := crypto.UnmarshalSecp256k1PublicKey(decodedKey)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	peerId, err := peer.IDFromPublicKey(publicKey)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	ctx, client, err := connmgr.Connect(ctx, fmt.Sprintf("/ip4/127.0.0.1/udp/9000/quic-v1/p2p/%s", peerId.String()), npub, libp2p.Transport(libp2pquic.NewTransport))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -116,7 +120,7 @@ func UploadDag(ctx context.Context, path string) {
 	//})
 
 	// Upload the dag to the hornet storage node
-	ctx, err = client.UploadDag(ctx, dag, nil, nil)
+	_, err = client.UploadDag(ctx, dag, nil, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -127,75 +131,48 @@ func UploadDag(ctx context.Context, path string) {
 
 func DownloadDag(ctx context.Context, root string) {
 	// Connect to a hornet storage node
-	publicKey := "12D3KooWK5w15heWibLQ7KUeKvVwbq8dTaSmad9FxaVD6jtUCT3j"
+	decodedKey, err := hex.DecodeString(signing.TrimPublicKey(npub))
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	ctx, client, err := connmgr.Connect(ctx, fmt.Sprintf("/ip4/127.0.0.1/tcp/9000/p2p/%s", publicKey), publicKey)
+	publicKey, err := crypto.UnmarshalSecp256k1PublicKey(decodedKey)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	peerId, err := peer.IDFromPublicKey(publicKey)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	ctx, client, err := connmgr.Connect(ctx, fmt.Sprintf("/ip4/127.0.0.1/udp/9000/quic-v1/p2p/%s", peerId.String()), npub, libp2p.Transport(libp2pquic.NewTransport))
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	// Upload the dag to the hornet storage node
-	ctx, dag, err := client.DownloadDag(ctx, root, nil, nil)
+	_, dag, err := client.DownloadDag(ctx, root, nil, nil, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	encoding, _, err := multibase.Decode(dag.Root)
-	if err != nil {
-		return
-	}
-
-	encoder := multibase.MustNewEncoder(encoding)
-
 	// Verify the entire dag
-	result, err := dag.Verify(encoder)
+	err = dag.Verify()
 	if err != nil {
 		log.Fatalf("Error: %s", err)
 	}
 
-	if result {
-		log.Println("Dag verified correctly")
-	} else {
-		log.Fatal("Dag failed to verify")
-	}
+	log.Println("Dag verified correctly")
 
 	jsonData, _ := json.Marshal(dag)
 	os.WriteFile("after_download.json", jsonData, 0644)
 
-	err = dag.CreateDirectory("D:/organizations/akashic_record/relevant/golang/output", encoder)
+	err = dag.CreateDirectory("D:/organizations/akashic_record/relevant/golang/output")
 	if err != nil {
 		log.Fatalf("Error: %s", err)
 	}
 
 	// Disconnect client as we no longer need it
 	client.Disconnect()
-}
-
-func GenerateKeys(ctx context.Context) {
-	privateKey, err := hornet_rsa.CreateKeyPair()
-	if err != nil {
-		fmt.Println("Failed to create private key")
-		return
-	}
-
-	hornet_rsa.SaveKeyPairToFile(privateKey)
-}
-
-func ParseKeys(ctx context.Context) (*rsa.PrivateKey, *rsa.PublicKey, error) {
-	privateKey, err := hornet_rsa.ParsePrivateKeyFromFile("private.key")
-	if err != nil {
-		fmt.Println("Failed to parse private key")
-		return nil, nil, err
-	}
-
-	publicKey, err := hornet_rsa.ParsePublicKeyFromFile("public.pem")
-	if err != nil {
-		fmt.Println("Failed to parse public key")
-		return nil, nil, err
-	}
-
-	log.Printf("Private Key: %s\n", privateKey)
-	log.Printf("Public Key: %s\n", publicKey)
-
-	return privateKey, publicKey, nil
 }

@@ -15,7 +15,6 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
 	"github.com/multiformats/go-multiaddr"
-	"github.com/multiformats/go-multibase"
 
 	"github.com/HORNET-Storage/go-hornet-storage-lib/lib"
 	types "github.com/HORNET-Storage/go-hornet-storage-lib/lib"
@@ -34,7 +33,6 @@ type Client struct {
 const (
 	UploadV1   protocol.ID = "/upload/1.0.0"
 	DownloadV1 protocol.ID = "/download/1.0.0"
-	BranchV1   protocol.ID = "/branch/1.0.0"
 )
 
 var Clients map[string]*Client
@@ -97,7 +95,7 @@ func GetClient(publicKey string) (*Client, error) {
 	client, exists := Clients[publicKey]
 
 	if !exists {
-		return nil, fmt.Errorf("Host for this public key does not exist")
+		return nil, fmt.Errorf("host for this public key does not exist")
 	}
 
 	return client, nil
@@ -150,15 +148,7 @@ func (client *Client) UploadDag(ctx context.Context, dag *merkle_dag.Dag, public
 
 	streamEncoder := cbor.NewEncoder(stream)
 
-	encoding, _, err := multibase.Decode(dag.Root)
-	if err != nil {
-		log.Println("Failed to discover encoding")
-		return nil, err
-	}
-
-	encoder := multibase.MustNewEncoder(encoding)
-
-	err = dag.IterateDag(func(leaf *merkle_dag.DagLeaf, parent *merkle_dag.DagLeaf) {
+	err = dag.IterateDag(func(leaf *merkle_dag.DagLeaf, parent *merkle_dag.DagLeaf) error {
 		if leaf.Hash == dag.Root {
 			message := types.UploadMessage{
 				Root:  dag.Root,
@@ -175,7 +165,7 @@ func (client *Client) UploadDag(ctx context.Context, dag *merkle_dag.Dag, public
 			}
 
 			if err := enc.Encode(&message); err != nil {
-				return //nil, err
+				return err
 			}
 
 			log.Println("Uploaded root leaf")
@@ -183,19 +173,15 @@ func (client *Client) UploadDag(ctx context.Context, dag *merkle_dag.Dag, public
 			if result := WaitForResponse(ctx, stream); !result {
 				stream.Close()
 
-				return //ctx, fmt.Errorf("Did not recieve a valid response")
+				return fmt.Errorf("Did not recieve a valid response")
 			}
 
 			log.Println("Response received")
 		} else {
-			result, err := leaf.VerifyLeaf(encoder)
+			err := leaf.VerifyLeaf()
 			if err != nil {
 				log.Println("Failed to verify leaf")
-				return //err
-			}
-
-			if !result {
-				return //fmt.Errorf("Failed to verify leaf")
+				return err
 			}
 
 			label := merkle_dag.GetLabel(leaf.Hash)
@@ -206,17 +192,13 @@ func (client *Client) UploadDag(ctx context.Context, dag *merkle_dag.Dag, public
 				branch, err = parent.GetBranch(label)
 				if err != nil {
 					log.Println("Failed to get branch")
-					return //err
+					return err
 				}
 
-				result, err = parent.VerifyBranch(branch)
+				err = parent.VerifyBranch(branch)
 				if err != nil {
 					log.Println("Failed to verify branch")
-					return //err
-				}
-
-				if !result {
-					return //fmt.Errorf("Failed to verify branch for leaf")
+					return err
 				}
 			}
 
@@ -237,18 +219,19 @@ func (client *Client) UploadDag(ctx context.Context, dag *merkle_dag.Dag, public
 			}
 
 			if err := streamEncoder.Encode(&message); err != nil {
-				log.Println("Failed to encode to stream")
-				return //err
+				return err
 			}
 
 			log.Println("Uploaded next leaf")
 
-			if result = WaitForResponse(ctx, stream); !result {
-				return //fmt.Errorf("Did not recieve a valid response")
+			if result := WaitForResponse(ctx, stream); !result {
+				return fmt.Errorf("Did not recieve a valid response")
 			}
 
 			log.Println("Response recieved")
 		}
+
+		return nil
 	})
 
 	if err != nil {
@@ -297,14 +280,6 @@ func (client *Client) UploadDag(ctx context.Context, dag *merkle_dag.Dag, public
 func UploadLeafChildren(ctx context.Context, stream network.Stream, leaf *merkle_dag.DagLeaf, dag *merkle_dag.Dag) error {
 	streamEncoder := cbor.NewEncoder(stream)
 
-	encoding, _, err := multibase.Decode(dag.Root)
-	if err != nil {
-		log.Println("Failed to discover encoding")
-		return err
-	}
-
-	encoder := multibase.MustNewEncoder(encoding)
-
 	count := len(dag.Leafs)
 
 	for label, hash := range leaf.Links {
@@ -313,14 +288,10 @@ func UploadLeafChildren(ctx context.Context, stream network.Stream, leaf *merkle
 			return fmt.Errorf("Leaf with has does not exist in dag")
 		}
 
-		result, err := child.VerifyLeaf(encoder)
+		err := child.VerifyLeaf()
 		if err != nil {
 			log.Println("Failed to verify leaf")
 			return err
-		}
-
-		if !result {
-			return fmt.Errorf("Failed to verify leaf")
 		}
 
 		var branch *merkle_dag.ClassicTreeBranch
@@ -332,14 +303,10 @@ func UploadLeafChildren(ctx context.Context, stream network.Stream, leaf *merkle
 				return err
 			}
 
-			result, err = leaf.VerifyBranch(branch)
+			err = leaf.VerifyBranch(branch)
 			if err != nil {
 				log.Println("Failed to verify branch")
 				return err
-			}
-
-			if !result {
-				return fmt.Errorf("Failed to verify branch for leaf")
 			}
 		}
 
@@ -358,7 +325,7 @@ func UploadLeafChildren(ctx context.Context, stream network.Stream, leaf *merkle
 
 		log.Println("Uploaded next leaf")
 
-		if result = WaitForResponse(ctx, stream); !result {
+		if result := WaitForResponse(ctx, stream); !result {
 			return fmt.Errorf("Did not recieve a valid response")
 		}
 
@@ -372,7 +339,7 @@ func UploadLeafChildren(ctx context.Context, stream network.Stream, leaf *merkle
 		}
 
 		if len(child.Links) > 0 {
-			err = UploadLeafChildren(ctx, stream, child, dag)
+			err := UploadLeafChildren(ctx, stream, child, dag)
 			if err != nil {
 				log.Println("Failed to Upload Leaf Children")
 				return err
@@ -384,7 +351,7 @@ func UploadLeafChildren(ctx context.Context, stream network.Stream, leaf *merkle
 }
 
 // Download dag from single hornet node
-func (client *Client) DownloadDag(ctx context.Context, root string, publicKey *string, signature *string) (context.Context, *merkle_dag.Dag, error) {
+func (client *Client) DownloadDag(ctx context.Context, root string, publicKey *string, signature *string, filter *types.DownloadFilter) (context.Context, *merkle_dag.Dag, error) {
 	ctx, stream, err := client.openStream(ctx, DownloadV1)
 	if err != nil {
 		return ctx, nil, err
@@ -404,6 +371,10 @@ func (client *Client) DownloadDag(ctx context.Context, root string, publicKey *s
 		downloadMessage.Signature = *signature
 	}
 
+	if filter != nil {
+		downloadMessage.Filter = filter
+	}
+
 	if err := streamEncoder.Encode(&downloadMessage); err != nil {
 		return ctx, nil, err
 	}
@@ -419,23 +390,17 @@ func (client *Client) DownloadDag(ctx context.Context, root string, publicKey *s
 
 	log.Println("Recieved upload message")
 
-	encoding, _, err := multibase.Decode(message.Root)
+	err = message.Leaf.VerifyRootLeaf()
 	if err != nil {
-		log.Println("Failed to discover encoding from root hash")
-
-		return ctx, nil, err
-	}
-
-	encoder := multibase.MustNewEncoder(encoding)
-
-	result, err = message.Leaf.VerifyRootLeaf(encoder)
-	if err != nil || !result {
 		log.Println("Failed to verify root leaf")
 
 		return ctx, nil, err
 	}
 
-	builder.AddLeaf(&message.Leaf, encoder, nil)
+	err = builder.AddLeaf(&message.Leaf, nil)
+	if err != nil {
+		return ctx, nil, err
+	}
 
 	log.Println("Processed root leaf")
 
@@ -458,17 +423,8 @@ func (client *Client) DownloadDag(ctx context.Context, root string, publicKey *s
 
 		log.Println("Recieved upload message")
 
-		encoding, _, err := multibase.Decode(message.Root)
+		err = message.Leaf.VerifyLeaf()
 		if err != nil {
-			log.Println("Failed to discover encoding from root hash")
-
-			break
-		}
-
-		encoder := multibase.MustNewEncoder(encoding)
-
-		result, err = message.Leaf.VerifyLeaf(encoder)
-		if err != nil || !result {
 			log.Println("Failed to verify leaf")
 
 			break
@@ -482,15 +438,20 @@ func (client *Client) DownloadDag(ctx context.Context, root string, publicKey *s
 		}
 
 		if message.Branch != nil {
-			result, err = parent.VerifyBranch(message.Branch)
-			if err != nil || !result {
+			err = parent.VerifyBranch(message.Branch)
+			if err != nil {
 				log.Println("Failed to verify leaf branch")
 
 				break
 			}
 		}
 
-		builder.AddLeaf(&message.Leaf, encoder, parent)
+		err = builder.AddLeaf(&message.Leaf, parent)
+		if err != nil {
+			log.Println("Failed to add leaf to builder")
+
+			break
+		}
 
 		log.Printf("Processed leaf: %s\n", message.Leaf.Hash)
 
@@ -506,7 +467,7 @@ func (client *Client) DownloadDag(ctx context.Context, root string, publicKey *s
 
 	dag := builder.BuildDag(message.Root)
 
-	result, err = dag.Verify(encoder)
+	err = dag.Verify()
 	if err != nil {
 		log.Println("Failed to verify dag")
 
