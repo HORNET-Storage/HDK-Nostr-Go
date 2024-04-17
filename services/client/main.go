@@ -18,13 +18,17 @@ import (
 	"github.com/HORNET-Storage/go-hornet-storage-lib/lib/connmgr"
 	"github.com/HORNET-Storage/go-hornet-storage-lib/lib/signing"
 	merkle_dag "github.com/HORNET-Storage/scionic-merkletree/dag"
+	"github.com/ipfs/go-cid"
 	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/peer"
 	libp2pquic "github.com/libp2p/go-libp2p/p2p/transport/quic"
 )
 
-const npub string = "npub03e950342c6942973eebe8c42279e75755bd901fb4ee77870c3a815c71e29e040c"
+// These are example keys generated for the purpose of this test client
+// Please do not use them for anything other than this
+const npub string = "npub1qwf2wtfyprlnta3nk5r4kryq9x0m0pyhuaj0ne2dsdnk053ghak5sg0jkrr"
+const nsec string = "nsec1083wvgge0h4f446g43j7gp04ukd3dvjqh9m773jveq4ms84tj74qph3tcu"
 
 func main() {
 	ctx := context.Background()
@@ -91,8 +95,7 @@ func UploadDag(ctx context.Context, path string) {
 
 	log.Println("Dag verified correctly")
 
-	// Connect to a hornet storage node
-	decodedKey, err := hex.DecodeString(signing.TrimPublicKey(npub))
+	decodedKey, err := signing.DecodeKey(npub)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -119,8 +122,22 @@ func UploadDag(ctx context.Context, path string) {
 	//	log.Printf("Processing leaf: %s\n", leaf.Hash)
 	//})
 
+	privateKey, _, err := signing.DeserializePrivateKey(nsec)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	signature, err := signing.SignCID(cid.MustParse(dag.Root), privateKey)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	serializedSignature := hex.EncodeToString(signature.Serialize())
+
+	pubKey := npub
+
 	// Upload the dag to the hornet storage node
-	_, err = client.UploadDag(ctx, dag, nil, nil)
+	_, err = client.UploadDag(ctx, dag, &pubKey, &serializedSignature)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -131,7 +148,7 @@ func UploadDag(ctx context.Context, path string) {
 
 func DownloadDag(ctx context.Context, root string) {
 	// Connect to a hornet storage node
-	decodedKey, err := hex.DecodeString(signing.TrimPublicKey(npub))
+	decodedKey, err := signing.DecodeKey(npub)
 	if err != nil {
 		log.Fatal(err)
 	}
