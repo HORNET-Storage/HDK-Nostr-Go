@@ -61,6 +61,8 @@ func RunCommandWatcher(ctx context.Context) {
 			log.Println("Available Commands:")
 			log.Println("upload")
 			log.Println("download")
+			log.Println("event")
+			log.Println("keys")
 			log.Println("shutdown")
 		case "upload":
 			UploadDag(ctx, segments[1])
@@ -68,6 +70,8 @@ func RunCommandWatcher(ctx context.Context) {
 			DownloadDag(ctx, segments[1])
 		case "event":
 			UploadEvent(ctx)
+		case "keys":
+			TestKeys(ctx)
 		case "shutdown":
 			log.Println("Shutting down")
 			Cleanup(ctx)
@@ -279,4 +283,24 @@ func UploadEvent(ctx context.Context) {
 	for _, event := range events {
 		fmt.Printf("Found Event %s of kind %d", event.ID, event.Kind)
 	}
+}
+
+func TestKeys(ctx context.Context) {
+	// Connect to a hornet storage node
+	publicKey, err := signing.DeserializePublicKey(npub)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	libp2pPubKey, err := signing.ConvertPubKeyToLibp2pPubKey(publicKey)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	peerId, err := peer.IDFromPublicKey(*libp2pPubKey)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	log.Printf("Keys deserialized properly and your libp2p peer id is: %s\n", peerId)
 }

@@ -14,8 +14,6 @@ import (
 )
 
 func DecodeKey(serializedKey string) ([]byte, error) {
-	fmt.Println(TrimPrivateKey(TrimPublicKey(serializedKey)))
-
 	bytes, err := hex.DecodeString(TrimPrivateKey(TrimPublicKey(serializedKey)))
 	if err != nil {
 		return nil, err
