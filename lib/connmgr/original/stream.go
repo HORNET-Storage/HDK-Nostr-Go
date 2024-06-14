@@ -1,4 +1,4 @@
-package connmgr
+package original
 
 import (
 	"context"
@@ -10,9 +10,10 @@ import (
 
 	types "github.com/HORNET-Storage/go-hornet-storage-lib/lib"
 	"github.com/fxamacker/cbor/v2"
+	"github.com/libp2p/go-libp2p/core/network"
 )
 
-func WaitForResponse(ctx context.Context, stream types.Stream) bool {
+func WaitForResponse(ctx context.Context, stream network.Stream) bool {
 	streamDecoder := cbor.NewDecoder(stream)
 
 	var response types.ResponseMessage
@@ -34,7 +35,7 @@ wait:
 	return response.Ok
 }
 
-func WaitForUploadMessage(ctx context.Context, stream types.Stream) (bool, *types.UploadMessage) {
+func WaitForUploadMessage(ctx context.Context, stream network.Stream) (bool, *types.UploadMessage) {
 	streamDecoder := cbor.NewDecoder(stream)
 
 	var message types.UploadMessage
@@ -66,7 +67,7 @@ wait:
 	return true, &message
 }
 
-func WriteResponseToStream(ctx context.Context, stream types.Stream, response bool) error {
+func WriteResponseToStream(ctx context.Context, stream network.Stream, response bool) error {
 	streamEncoder := cbor.NewEncoder(stream)
 
 	message := types.ResponseMessage{
@@ -80,7 +81,7 @@ func WriteResponseToStream(ctx context.Context, stream types.Stream, response bo
 	return nil
 }
 
-func ReadMessageFromStream[T any](stream types.Stream) (*T, error) {
+func ReadMessageFromStream[T any](stream network.Stream) (*T, error) {
 	streamDecoder := cbor.NewDecoder(stream)
 
 	var message T
@@ -110,7 +111,7 @@ wait:
 	return &message, nil
 }
 
-func WriteMessageToStream[T any](stream types.Stream, message T) error {
+func WriteMessageToStream[T any](stream network.Stream, message T) error {
 	enc := cbor.NewEncoder(stream)
 
 	if err := enc.Encode(&message); err != nil {
@@ -120,7 +121,7 @@ func WriteMessageToStream[T any](stream types.Stream, message T) error {
 	return nil
 }
 
-func ReadJsonMessageFromStream[T any](stream types.Stream) (*T, error) {
+func ReadJsonMessageFromStream[T any](stream network.Stream) (*T, error) {
 	streamDecoder := json.NewDecoder(stream)
 
 	var message T
@@ -150,7 +151,7 @@ wait:
 	return &message, nil
 }
 
-func WriteJsonMessageToStream[T any](stream types.Stream, message T) error {
+func WriteJsonMessageToStream[T any](stream network.Stream, message T) error {
 	enc := json.NewEncoder(stream)
 
 	if err := enc.Encode(&message); err != nil {

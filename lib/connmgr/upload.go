@@ -6,194 +6,86 @@ import (
 	"log"
 
 	"github.com/fxamacker/cbor/v2"
-	"github.com/libp2p/go-libp2p/core/network"
 
 	types "github.com/HORNET-Storage/go-hornet-storage-lib/lib"
 	merkle_dag "github.com/HORNET-Storage/scionic-merkletree/dag"
 )
 
-// Upload dag to all connected hornet nodes
-func UploadDag(ctx context.Context, dag *merkle_dag.Dag, publicKey *string, signature *string) (context.Context, error) {
-	for _, client := range Clients {
-		ctx, err := client.UploadDag(ctx, dag, publicKey, signature)
+func UploadDag(ctx context.Context, connectionManager ConnectionManager, dag *merkle_dag.Dag, publicKey *string, signature *string) error {
+	for connectionID := range connectionManager.ListConnections() { // Assuming a method to list all connections
+		err := UploadDagSingle(ctx, connectionManager, connectionID, dag, publicKey, signature)
 		if err != nil {
-			return ctx, err
+			return fmt.Errorf("failed to upload DAG to node %s: %w", connectionID, err)
 		}
 	}
-
-	return ctx, nil
+	return nil
 }
 
-// Upload dag to a single hornet node
-func (client *Client) UploadDag(ctx context.Context, dag *merkle_dag.Dag, publicKey *string, signature *string) (context.Context, error) {
-	ctx, stream, err := client.openStream(ctx, UploadV1)
+func UploadDagSingle(ctx context.Context, connectionManager ConnectionManager, connectionID string, dag *merkle_dag.Dag, publicKey *string, signature *string) error {
+	stream, err := connectionManager.GetStream(ctx, connectionID, UploadV1)
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("failed to get stream for connection %s: %w", connectionID, err)
 	}
+	defer stream.Close()
 
-	enc := cbor.NewEncoder(stream)
-	count := len(dag.Leafs)
-
-	rootLeaf := dag.Leafs[dag.Root]
-
-	streamEncoder := cbor.NewEncoder(stream)
+	encoder := cbor.NewEncoder(stream)
 
 	err = dag.IterateDag(func(leaf *merkle_dag.DagLeaf, parent *merkle_dag.DagLeaf) error {
-		if leaf.Hash == dag.Root {
-			message := types.UploadMessage{
-				Root:  dag.Root,
-				Count: count,
-				Leaf:  *rootLeaf,
-			}
-
-			if publicKey != nil {
-				message.PublicKey = *publicKey
-			}
-
-			if signature != nil {
-				message.Signature = *signature
-			}
-
-			if err := enc.Encode(&message); err != nil {
-				return err
-			}
-
-			log.Println("Uploaded root leaf")
-
-			if result := WaitForResponse(ctx, stream); !result {
-				stream.Close()
-
-				return fmt.Errorf("Did not recieve a valid response")
-			}
-
-			log.Println("Response received")
-		} else {
-			err := leaf.VerifyLeaf()
-			if err != nil {
-				log.Println("Failed to verify leaf")
-				return err
-			}
-
-			label := merkle_dag.GetLabel(leaf.Hash)
-
-			var branch *merkle_dag.ClassicTreeBranch
-
-			if len(leaf.Links) > 1 {
-				branch, err = parent.GetBranch(label)
-				if err != nil {
-					log.Println("Failed to get branch")
-					return err
-				}
-
-				err = parent.VerifyBranch(branch)
-				if err != nil {
-					log.Println("Failed to verify branch")
-					return err
-				}
-			}
-
-			message := types.UploadMessage{
-				Root:   dag.Root,
-				Count:  count,
-				Leaf:   *leaf,
-				Parent: parent.Hash,
-				Branch: branch,
-			}
-
-			if publicKey != nil {
-				message.PublicKey = *publicKey
-			}
-
-			if signature != nil {
-				message.Signature = *signature
-			}
-
-			if err := streamEncoder.Encode(&message); err != nil {
-				return err
-			}
-
-			log.Println("Uploaded next leaf")
-
-			if result := WaitForResponse(ctx, stream); !result {
-				return fmt.Errorf("Did not recieve a valid response")
-			}
-
-			log.Println("Response recieved")
-		}
-
-		return nil
+		return sendLeaf(ctx, stream, encoder, leaf, parent, dag, publicKey, signature)
 	})
-
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("failed to iterate and send DAG: %w", err)
 	}
 
-	/*
-			message := types.UploadMessage{
-				Root:  dag.Root,
-				Count: count,
-				Leaf:  *rootLeaf,
-			}
-
-			if err := enc.Encode(&message); err != nil {
-				return nil, err
-			}
-
-			log.Println("Uploaded root leaf")
-
-			if result := WaitForResponse(ctx, stream); !result {
-				stream.Close()
-
-				return ctx, fmt.Errorf("Did not recieve a valid response")
-			}
-
-			log.Println("Response received")
-
-
-		err = UploadLeafChildren(ctx, stream, rootLeaf, dag)
-		if err != nil {
-			log.Printf("Failed to upload leaf children: %e", err)
-
-			stream.Close()
-
-			return ctx, err
-		}
-	*/
-
-	stream.Close()
-
-	log.Println("Dag has been uploaded")
-
-	return ctx, nil
+	log.Println("DAG has been uploaded successfully")
+	return nil
 }
 
-func UploadLeafChildren(ctx context.Context, stream network.Stream, leaf *merkle_dag.DagLeaf, dag *merkle_dag.Dag) error {
-	streamEncoder := cbor.NewEncoder(stream)
-
+func sendLeaf(ctx context.Context, stream types.Stream, encoder *cbor.Encoder, leaf *merkle_dag.DagLeaf, parent *merkle_dag.DagLeaf, dag *merkle_dag.Dag, publicKey *string, signature *string) error {
 	count := len(dag.Leafs)
 
-	for label, hash := range leaf.Links {
-		child, exists := dag.Leafs[hash]
-		if !exists {
-			return fmt.Errorf("Leaf with has does not exist in dag")
+	if leaf.Hash == dag.Root {
+		message := types.UploadMessage{
+			Root:  dag.Root,
+			Count: count,
+			Leaf:  *leaf,
 		}
 
-		err := child.VerifyLeaf()
+		if publicKey != nil {
+			message.PublicKey = *publicKey
+		}
+		if signature != nil {
+			message.Signature = *signature
+		}
+
+		if err := encoder.Encode(message); err != nil {
+			return err
+		}
+
+		if result := WaitForResponse(ctx, stream); !result {
+			return fmt.Errorf("did not receive a valid response")
+		}
+
+		log.Printf("Uploaded leaf %s\n", leaf.Hash)
+	} else {
+		err := leaf.VerifyLeaf()
 		if err != nil {
 			log.Println("Failed to verify leaf")
 			return err
 		}
 
+		label := merkle_dag.GetLabel(leaf.Hash)
+
 		var branch *merkle_dag.ClassicTreeBranch
 
 		if len(leaf.Links) > 1 {
-			branch, err = leaf.GetBranch(label)
+			branch, err = parent.GetBranch(label)
 			if err != nil {
 				log.Println("Failed to get branch")
 				return err
 			}
 
-			err = leaf.VerifyBranch(branch)
+			err = parent.VerifyBranch(branch)
 			if err != nil {
 				log.Println("Failed to verify branch")
 				return err
@@ -203,38 +95,30 @@ func UploadLeafChildren(ctx context.Context, stream network.Stream, leaf *merkle
 		message := types.UploadMessage{
 			Root:   dag.Root,
 			Count:  count,
-			Leaf:   *child,
-			Parent: leaf.Hash,
+			Leaf:   *leaf,
+			Parent: parent.Hash,
 			Branch: branch,
 		}
 
-		if err := streamEncoder.Encode(&message); err != nil {
-			log.Println("Failed to encode to stream")
+		if publicKey != nil {
+			message.PublicKey = *publicKey
+		}
+
+		if signature != nil {
+			message.Signature = *signature
+		}
+
+		if err := encoder.Encode(&message); err != nil {
 			return err
 		}
 
 		log.Println("Uploaded next leaf")
 
 		if result := WaitForResponse(ctx, stream); !result {
-			return fmt.Errorf("Did not recieve a valid response")
+			return fmt.Errorf("did not recieve a valid response")
 		}
 
 		log.Println("Response recieved")
-	}
-
-	for _, hash := range leaf.Links {
-		child, exists := dag.Leafs[hash]
-		if !exists {
-			return fmt.Errorf("Leaf with hash does not exist in dag")
-		}
-
-		if len(child.Links) > 0 {
-			err := UploadLeafChildren(ctx, stream, child, dag)
-			if err != nil {
-				log.Println("Failed to Upload Leaf Children")
-				return err
-			}
-		}
 	}
 
 	return nil

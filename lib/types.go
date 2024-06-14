@@ -1,6 +1,8 @@
 package lib
 
 import (
+	"context"
+
 	merkle_dag "github.com/HORNET-Storage/scionic-merkletree/dag"
 )
 
@@ -44,4 +46,25 @@ type ResponseMessage struct {
 
 type ErrorMessage struct {
 	Message string
+}
+
+type QueryMessage struct {
+	QueryFilter map[string]string
+}
+
+type QueryResponse struct {
+	Hashes []string
+}
+
+type Stream interface {
+	Read(p []byte) (int, error)
+	Write(p []byte) (int, error)
+	Close() error
+	Context() context.Context
+}
+
+type Connector interface {
+	Connect(ctx context.Context) error
+	Disconnect() error
+	OpenStream(ctx context.Context, protocolID string) (Stream, error)
 }

@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/HORNET-Storage/go-hornet-storage-lib/lib/connmgr"
+	"github.com/HORNET-Storage/go-hornet-storage-lib/lib/connmgr/original"
 	"github.com/HORNET-Storage/go-hornet-storage-lib/lib/signing"
 	merkle_dag "github.com/HORNET-Storage/scionic-merkletree/dag"
 	"github.com/ipfs/go-cid"
@@ -68,6 +69,8 @@ func RunCommandWatcher(ctx context.Context) {
 			UploadDag(ctx, segments[1])
 		case "download":
 			DownloadDag(ctx, segments[1])
+		case "query":
+			QueryDag()
 		case "event":
 			UploadEvent(ctx)
 		case "keys":
@@ -117,17 +120,15 @@ func UploadDag(ctx context.Context, path string) {
 		log.Fatal(err)
 	}
 
-	ctx, client, err := connmgr.Connect(ctx, fmt.Sprintf("/ip4/127.0.0.1/udp/9000/quic-v1/p2p/%s", peerId.String()), npub, libp2p.Transport(libp2pquic.NewTransport))
+	conMgr := connmgr.NewGenericConnectionManager()
+
+	err = conMgr.ConnectWithLibp2p(ctx, "default", fmt.Sprintf("/ip4/127.0.0.1/udp/9000/quic-v1/p2p/%s", peerId.String()), libp2p.Transport(libp2pquic.NewTransport))
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	jsonData, _ := dag.ToJSON()
 	os.WriteFile("before_upload.json", jsonData, 0644)
-
-	//IterateDag(dag, func(leaf *merkle_dag.DagLeaf) {
-	//	log.Printf("Processing leaf: %s\n", leaf.Hash)
-	//})
 
 	privateKey, _, err := signing.DeserializePrivateKey(nsec)
 	if err != nil {
@@ -143,14 +144,12 @@ func UploadDag(ctx context.Context, path string) {
 
 	pubKey := npub
 
-	// Upload the dag to the hornet storage node
-	_, err = client.UploadDag(ctx, dag, &pubKey, &serializedSignature)
+	err = connmgr.UploadDagSingle(ctx, conMgr, "default", dag, &pubKey, &serializedSignature)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	// Disconnect client as we no longer need it
-	client.Disconnect()
+	conMgr.Disconnect("default")
 }
 
 func DownloadDag(ctx context.Context, root string) {
@@ -170,13 +169,15 @@ func DownloadDag(ctx context.Context, root string) {
 		log.Fatal(err)
 	}
 
-	ctx, client, err := connmgr.Connect(ctx, fmt.Sprintf("/ip4/127.0.0.1/udp/9000/quic-v1/p2p/%s", peerId.String()), npub, libp2p.Transport(libp2pquic.NewTransport))
+	conMgr := connmgr.NewGenericConnectionManager()
+
+	err = conMgr.ConnectWithLibp2p(ctx, "default", fmt.Sprintf("/ip4/127.0.0.1/udp/9000/quic-v1/p2p/%s", peerId.String()), libp2p.Transport(libp2pquic.NewTransport))
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	// Upload the dag to the hornet storage node
-	_, dag, err := client.DownloadDag(ctx, root, nil, nil, nil)
+	_, dag, err := connmgr.DownloadDag(ctx, conMgr, "default", root, nil, nil, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -198,7 +199,60 @@ func DownloadDag(ctx context.Context, root string) {
 	}
 
 	// Disconnect client as we no longer need it
-	client.Disconnect()
+	conMgr.Disconnect("default")
+}
+
+func QueryDag() {
+	ctx := context.Background()
+
+	// Connect to a hornet storage node
+	publicKey, err := signing.DeserializePublicKey(npub)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	libp2pPubKey, err := signing.ConvertPubKeyToLibp2pPubKey(publicKey)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	peerId, err := peer.IDFromPublicKey(*libp2pPubKey)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	conMgr := connmgr.NewGenericConnectionManager()
+
+	err = conMgr.ConnectWithLibp2p(ctx, "default", fmt.Sprintf("/ip4/127.0.0.1/udp/9000/quic-v1/p2p/%s", peerId.String()), libp2p.Transport(libp2pquic.NewTransport))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	pubKey := signing.TrimPublicKey(npub)
+
+	fmt.Printf("Querying pubkey: %s", pubKey)
+
+	query := map[string]string{
+		pubKey: "nestrbox",
+	}
+
+	// Upload the dag to the hornet storage node
+	_, hashes, err := connmgr.QueryDag(ctx, conMgr, "default", query)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	data, err := json.Marshal(*hashes)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Println("RESULTS")
+
+	fmt.Println(data)
+
+	// Disconnect client as we no longer need it
+	conMgr.Disconnect("default")
 }
 
 func UploadEvent(ctx context.Context) {
@@ -257,7 +311,7 @@ func UploadEvent(ctx context.Context) {
 		log.Fatal(err)
 	}
 
-	ctx, client, err := connmgr.Connect(ctx, fmt.Sprintf("/ip4/127.0.0.1/udp/9000/quic-v1/p2p/%s", peerId.String()), npub, libp2p.Transport(libp2pquic.NewTransport))
+	ctx, client, err := original.Connect(ctx, fmt.Sprintf("/ip4/127.0.0.1/udp/9000/quic-v1/p2p/%s", peerId.String()), npub, libp2p.Transport(libp2pquic.NewTransport))
 	if err != nil {
 		log.Fatal(err)
 	}

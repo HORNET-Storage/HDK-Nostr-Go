@@ -1,8 +1,7 @@
-package connmgr
+package original
 
 import (
 	"context"
-	"fmt"
 	"log"
 
 	"github.com/fxamacker/cbor/v2"
@@ -11,12 +10,12 @@ import (
 	merkle_dag "github.com/HORNET-Storage/scionic-merkletree/dag"
 )
 
-func DownloadDag(ctx context.Context, connectionManager ConnectionManager, connectionID string, root string, publicKey *string, signature *string, filter *types.DownloadFilter) (context.Context, *merkle_dag.Dag, error) {
-	stream, err := connectionManager.GetStream(ctx, connectionID, DownloadV1)
+// Download dag from single hornet node
+func (client *Client) DownloadDag(ctx context.Context, root string, publicKey *string, signature *string, filter *types.DownloadFilter) (context.Context, *merkle_dag.Dag, error) {
+	ctx, stream, err := client.openStream(ctx, DownloadV1)
 	if err != nil {
-		return ctx, nil, fmt.Errorf("failed to get stream for connection %s: %w", connectionID, err)
+		return ctx, nil, err
 	}
-	defer stream.Close()
 
 	streamEncoder := cbor.NewEncoder(stream)
 
