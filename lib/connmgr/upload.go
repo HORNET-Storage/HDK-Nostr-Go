@@ -11,17 +11,18 @@ import (
 	merkle_dag "github.com/HORNET-Storage/scionic-merkletree/dag"
 )
 
-func UploadDag(ctx context.Context, connectionManager ConnectionManager, dag *merkle_dag.Dag, publicKey *string, signature *string) error {
-	for connectionID := range connectionManager.ListConnections() { // Assuming a method to list all connections
-		err := UploadDagSingle(ctx, connectionManager, connectionID, dag, publicKey, signature)
+func UploadDag(ctx context.Context, connectionManager ConnectionManager, dag *merkle_dag.Dag, publicKey *string, signature *string, progressChan chan<- types.UploadProgress) error {
+	for connectionID := range connectionManager.ListConnections() {
+		err := UploadDagSingle(ctx, connectionManager, connectionID, dag, publicKey, signature, progressChan)
 		if err != nil {
 			return fmt.Errorf("failed to upload DAG to node %s: %w", connectionID, err)
 		}
 	}
+
 	return nil
 }
 
-func UploadDagSingle(ctx context.Context, connectionManager ConnectionManager, connectionID string, dag *merkle_dag.Dag, publicKey *string, signature *string) error {
+func UploadDagSingle(ctx context.Context, connectionManager ConnectionManager, connectionID string, dag *merkle_dag.Dag, publicKey *string, signature *string, progressChan chan<- types.UploadProgress) error {
 	stream, err := connectionManager.GetStream(ctx, connectionID, UploadV1)
 	if err != nil {
 		return fmt.Errorf("failed to get stream for connection %s: %w", connectionID, err)
@@ -29,15 +30,32 @@ func UploadDagSingle(ctx context.Context, connectionManager ConnectionManager, c
 	defer stream.Close()
 
 	encoder := cbor.NewEncoder(stream)
+	totalLeafs := len(dag.Leafs)
+	leafsSent := 0
 
 	err = dag.IterateDag(func(leaf *merkle_dag.DagLeaf, parent *merkle_dag.DagLeaf) error {
-		return sendLeaf(ctx, stream, encoder, leaf, parent, dag, publicKey, signature)
+		err := sendLeaf(ctx, stream, encoder, leaf, parent, dag, publicKey, signature)
+
+		if err != nil {
+			if progressChan != nil {
+				progressChan <- types.UploadProgress{ConnectionID: connectionID, LeafsSent: leafsSent, TotalLeafs: totalLeafs, Error: err}
+			}
+
+			return err
+		}
+
+		leafsSent++
+
+		if progressChan != nil {
+			progressChan <- types.UploadProgress{ConnectionID: connectionID, LeafsSent: leafsSent, TotalLeafs: totalLeafs}
+		}
+
+		return nil
 	})
 	if err != nil {
 		return fmt.Errorf("failed to iterate and send DAG: %w", err)
 	}
 
-	log.Println("DAG has been uploaded successfully")
 	return nil
 }
 
@@ -65,8 +83,6 @@ func sendLeaf(ctx context.Context, stream types.Stream, encoder *cbor.Encoder, l
 		if result := WaitForResponse(ctx, stream); !result {
 			return fmt.Errorf("did not receive a valid response")
 		}
-
-		log.Printf("Uploaded leaf %s\n", leaf.Hash)
 	} else {
 		err := leaf.VerifyLeaf()
 		if err != nil {
@@ -112,13 +128,9 @@ func sendLeaf(ctx context.Context, stream types.Stream, encoder *cbor.Encoder, l
 			return err
 		}
 
-		log.Println("Uploaded next leaf")
-
 		if result := WaitForResponse(ctx, stream); !result {
 			return fmt.Errorf("did not recieve a valid response")
 		}
-
-		log.Println("Response recieved")
 	}
 
 	return nil

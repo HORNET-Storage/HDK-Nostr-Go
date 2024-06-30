@@ -68,3 +68,16 @@ type Connector interface {
 	Disconnect() error
 	OpenStream(ctx context.Context, protocolID string) (Stream, error)
 }
+
+type UploadProgress struct {
+	ConnectionID string
+	LeafsSent    int
+	TotalLeafs   int
+	Error        error
+}
+
+type DownloadProgress struct {
+	ConnectionID   string
+	LeafsRetreived int
+	Error          error
+}

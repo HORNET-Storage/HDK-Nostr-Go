@@ -16,6 +16,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/HORNET-Storage/go-hornet-storage-lib/lib"
 	"github.com/HORNET-Storage/go-hornet-storage-lib/lib/connmgr"
 	"github.com/HORNET-Storage/go-hornet-storage-lib/lib/connmgr/original"
 	"github.com/HORNET-Storage/go-hornet-storage-lib/lib/signing"
@@ -144,10 +145,25 @@ func UploadDag(ctx context.Context, path string) {
 
 	pubKey := npub
 
-	err = connmgr.UploadDagSingle(ctx, conMgr, "default", dag, &pubKey, &serializedSignature)
+	progressChan := make(chan lib.UploadProgress)
+
+	go func() {
+		for progress := range progressChan {
+			if progress.Error != nil {
+				fmt.Printf("Error uploading to %s: %v\n", progress.ConnectionID, progress.Error)
+			} else {
+				fmt.Printf("Progress for %s: %d/%d leafs uploaded\n", progress.ConnectionID, progress.LeafsSent, progress.TotalLeafs)
+			}
+		}
+	}()
+
+	// Upload the dag to the hornet storage node
+	err = connmgr.UploadDagSingle(ctx, conMgr, "default", dag, &pubKey, &serializedSignature, progressChan)
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	close(progressChan)
 
 	conMgr.Disconnect("default")
 }
@@ -176,11 +192,25 @@ func DownloadDag(ctx context.Context, root string) {
 		log.Fatal(err)
 	}
 
+	progressChan := make(chan lib.DownloadProgress)
+
+	go func() {
+		for progress := range progressChan {
+			if progress.Error != nil {
+				fmt.Printf("Error uploading to %s: %v\n", progress.ConnectionID, progress.Error)
+			} else {
+				fmt.Printf("Progress for %s: %d leafs downloaded\n", progress.ConnectionID, progress.LeafsRetreived)
+			}
+		}
+	}()
+
 	// Upload the dag to the hornet storage node
-	_, dag, err := connmgr.DownloadDag(ctx, conMgr, "default", root, nil, nil, nil)
+	_, dag, err := connmgr.DownloadDag(ctx, conMgr, "default", root, nil, nil, nil, progressChan)
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	close(progressChan)
 
 	// Verify the entire dag
 	err = dag.Verify()
@@ -192,11 +222,6 @@ func DownloadDag(ctx context.Context, root string) {
 
 	jsonData, _ := json.Marshal(dag)
 	os.WriteFile("after_download.json", jsonData, 0644)
-
-	err = dag.CreateDirectory("D:/organizations/akashic_record/relevant/golang/output")
-	if err != nil {
-		log.Fatalf("Error: %s", err)
-	}
 
 	// Disconnect client as we no longer need it
 	conMgr.Disconnect("default")
@@ -228,12 +253,8 @@ func QueryDag() {
 		log.Fatal(err)
 	}
 
-	pubKey := signing.TrimPublicKey(npub)
-
-	fmt.Printf("Querying pubkey: %s", pubKey)
-
 	query := map[string]string{
-		pubKey: "nestrbox",
+		npub: "nestrbox",
 	}
 
 	// Upload the dag to the hornet storage node
@@ -248,6 +269,10 @@ func QueryDag() {
 	}
 
 	fmt.Println("RESULTS")
+
+	for _, hash := range *hashes {
+		fmt.Println(hash)
+	}
 
 	fmt.Println(data)
 

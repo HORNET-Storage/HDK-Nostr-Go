@@ -49,12 +49,12 @@ wait:
 		default:
 			err := streamDecoder.Decode(&message)
 
-			if err != nil {
-				log.Printf("Error reading from stream: %e", err)
-			}
-
 			if err == io.EOF {
 				return false, nil
+			}
+
+			if err != nil {
+				log.Printf("Error reading from stream: %e", err)
 			}
 
 			if err == nil {

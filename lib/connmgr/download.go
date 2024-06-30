@@ -11,7 +11,7 @@ import (
 	merkle_dag "github.com/HORNET-Storage/scionic-merkletree/dag"
 )
 
-func DownloadDag(ctx context.Context, connectionManager ConnectionManager, connectionID string, root string, publicKey *string, signature *string, filter *types.DownloadFilter) (context.Context, *merkle_dag.Dag, error) {
+func DownloadDag(ctx context.Context, connectionManager ConnectionManager, connectionID string, root string, publicKey *string, signature *string, filter *types.DownloadFilter, progressChan chan<- types.DownloadProgress) (context.Context, *merkle_dag.Dag, error) {
 	stream, err := connectionManager.GetStream(ctx, connectionID, DownloadV1)
 	if err != nil {
 		return ctx, nil, fmt.Errorf("failed to get stream for connection %s: %w", connectionID, err)
@@ -19,6 +19,8 @@ func DownloadDag(ctx context.Context, connectionManager ConnectionManager, conne
 	defer stream.Close()
 
 	streamEncoder := cbor.NewEncoder(stream)
+
+	leafCount := 0
 
 	downloadMessage := types.DownloadMessage{
 		Root: root,
@@ -44,12 +46,8 @@ func DownloadDag(ctx context.Context, connectionManager ConnectionManager, conne
 
 	result, message := WaitForUploadMessage(ctx, stream)
 	if !result {
-		log.Println("Failed to recieve upload message in time")
-
 		return ctx, nil, err
 	}
-
-	log.Println("Recieved upload message")
 
 	err = message.Leaf.VerifyRootLeaf()
 	if err != nil {
@@ -63,8 +61,6 @@ func DownloadDag(ctx context.Context, connectionManager ConnectionManager, conne
 		return ctx, nil, err
 	}
 
-	log.Println("Processed root leaf")
-
 	err = WriteResponseToStream(ctx, stream, true)
 	if err != nil || !result {
 		log.Println("Failed to write response to stream")
@@ -72,17 +68,17 @@ func DownloadDag(ctx context.Context, connectionManager ConnectionManager, conne
 		return ctx, nil, err
 	}
 
-	for {
-		log.Println("Waiting for upload message")
+	leafCount++
 
+	if progressChan != nil {
+		progressChan <- types.DownloadProgress{ConnectionID: connectionID, LeafsRetreived: leafCount}
+	}
+
+	for {
 		result, message := WaitForUploadMessage(ctx, stream)
 		if !result {
-			log.Println("Failed to recieve upload message in time")
-
 			break
 		}
-
-		log.Println("Recieved upload message")
 
 		err = message.Leaf.VerifyLeaf()
 		if err != nil {
@@ -114,17 +110,19 @@ func DownloadDag(ctx context.Context, connectionManager ConnectionManager, conne
 			break
 		}
 
-		log.Printf("Processed leaf: %s\n", message.Leaf.Hash)
-
 		err = WriteResponseToStream(ctx, stream, true)
 		if err != nil || !result {
 			log.Println("Failed to write response to stream")
 
 			break
 		}
-	}
 
-	log.Println("Building and verifying dag")
+		leafCount++
+
+		if progressChan != nil {
+			progressChan <- types.DownloadProgress{ConnectionID: connectionID, LeafsRetreived: leafCount}
+		}
+	}
 
 	dag := builder.BuildDag(message.Root)
 
@@ -138,8 +136,6 @@ func DownloadDag(ctx context.Context, connectionManager ConnectionManager, conne
 	if !result {
 		log.Printf("Failed to verify dag: %s\n", message.Root)
 	}
-
-	log.Println("Download finished")
 
 	return ctx, dag, nil
 }
