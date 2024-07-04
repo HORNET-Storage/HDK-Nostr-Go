@@ -18,7 +18,6 @@ import (
 
 	"github.com/HORNET-Storage/go-hornet-storage-lib/lib"
 	"github.com/HORNET-Storage/go-hornet-storage-lib/lib/connmgr"
-	"github.com/HORNET-Storage/go-hornet-storage-lib/lib/connmgr/original"
 	"github.com/HORNET-Storage/go-hornet-storage-lib/lib/signing"
 	merkle_dag "github.com/HORNET-Storage/scionic-merkletree/dag"
 	"github.com/ipfs/go-cid"
@@ -336,14 +335,21 @@ func UploadEvent(ctx context.Context) {
 		log.Fatal(err)
 	}
 
-	ctx, client, err := original.Connect(ctx, fmt.Sprintf("/ip4/127.0.0.1/udp/9000/quic-v1/p2p/%s", peerId.String()), npub, libp2p.Transport(libp2pquic.NewTransport))
+	conMgr := connmgr.NewGenericConnectionManager()
+
+	err = conMgr.ConnectWithLibp2p(ctx, "default", fmt.Sprintf("/ip4/127.0.0.1/udp/9000/quic-v1/p2p/%s", peerId.String()), libp2p.Transport(libp2pquic.NewTransport))
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	_, okEnv, err := client.SendUniversalEvent(ctx, event, nil)
+	results, err := connmgr.SendUniversalEvent(ctx, conMgr, event, nil)
 	if err != nil {
 		log.Fatal(err)
+	}
+
+	okEnv, ok := results["default"]
+	if !ok {
+		log.Fatal("Did not get a valid response")
 	}
 
 	fmt.Println(okEnv.EventID + " | " + okEnv.Reason)
@@ -352,7 +358,7 @@ func UploadEvent(ctx context.Context) {
 		IDs: []string{okEnv.EventID},
 	}
 
-	_, events, err := client.QueryEvents(ctx, []nostr.Filter{filter}, nil)
+	events, err := connmgr.QueryEvents(ctx, conMgr, "default", []nostr.Filter{filter}, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
