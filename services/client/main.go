@@ -297,7 +297,7 @@ func UploadEvent(ctx context.Context) {
 	// Create event object
 	event := &nostr.Event{
 		PubKey:    npub,
-		CreatedAt: nostr.Timestamp(time.Now().Unix()),
+		CreatedAt: nostr.Now(),
 		Kind:      0,
 		Tags: []nostr.Tag{
 			{"e", "5c83da77af1dec6d7289834998ad7aafbd9e2191396d75ec3cc27f5a77226f36", "wss://nostr.example.com"},
@@ -388,4 +388,16 @@ func TestKeys(ctx context.Context) {
 	}
 
 	log.Printf("Keys deserialized properly and your libp2p peer id is: %s\n", peerId)
+}
+
+func TimeCheck(eventCreatedAt int64) (bool, string) {
+	const timeCutoff = 5 * time.Minute // Define your own cutoff threshold
+	eventTime := time.Unix(eventCreatedAt, 0)
+
+	// Check if the event timestamp is too far in the past or future
+	if time.Since(eventTime) > timeCutoff || time.Until(eventTime) > timeCutoff {
+		errMsg := fmt.Sprintf("invalid: event creation date is too far off from the current time (%s)", eventTime)
+		return false, errMsg
+	}
+	return true, ""
 }

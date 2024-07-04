@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 
 	"github.com/nbd-wtf/go-nostr"
 )
@@ -39,6 +40,9 @@ func SendUniversalEventSingle(ctx context.Context, connectionManager ConnectionM
 		SubscriptionID: subscriptionId,
 		Event:          *event,
 	}
+
+	log.Println("ID 2: " + reqMessage.Event.ID)
+	log.Printf("CREATED_AT 2: %d", reqMessage.Event.CreatedAt)
 
 	if err := streamEncoder.Encode(&reqMessage); err != nil {
 		return nil, err
@@ -106,7 +110,7 @@ func SendUniversalEventSingle(ctx context.Context, connectionManager ConnectionM
 }
 
 func QueryEvents(ctx context.Context, connectionManager ConnectionManager, connectionID string, filters []nostr.Filter, subscriptionId *string) ([]nostr.Event, error) {
-	stream, err := connectionManager.GetStream(ctx, connectionID, "/nostr/event/universal")
+	stream, err := connectionManager.GetStream(ctx, connectionID, "/nostr/event/filter")
 	if err != nil {
 		return nil, fmt.Errorf("failed to get stream for connection %s: %w", connectionID, err)
 	}
