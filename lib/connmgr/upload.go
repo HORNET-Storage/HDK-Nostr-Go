@@ -23,7 +23,7 @@ func UploadDag(ctx context.Context, connectionManager ConnectionManager, dag *me
 }
 
 func UploadDagSingle(ctx context.Context, connectionManager ConnectionManager, connectionID string, dag *merkle_dag.Dag, publicKey *string, signature *string, progressChan chan<- types.UploadProgress) error {
-	stream, err := connectionManager.GetStream(ctx, connectionID, UploadV1)
+	stream, err := connectionManager.GetStream(ctx, connectionID, UploadID)
 	if err != nil {
 		return fmt.Errorf("failed to get stream for connection %s: %w", connectionID, err)
 	}
@@ -76,10 +76,12 @@ func sendLeaf(ctx context.Context, stream types.Stream, encoder *cbor.Encoder, l
 			message.Signature = *signature
 		}
 
+		log.Println("Sending leaf")
 		if err := encoder.Encode(message); err != nil {
 			return err
 		}
 
+		log.Println("Waiting for response")
 		if result := WaitForResponse(ctx, stream); !result {
 			return fmt.Errorf("did not receive a valid response")
 		}

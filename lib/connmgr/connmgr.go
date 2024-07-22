@@ -13,9 +13,9 @@ import (
 )
 
 const (
-	UploadV1   string = "/upload/1.0.0"
-	DownloadV1 string = "/download/1.0.0"
-	QueryV1    string = "/query/1.0.0"
+	UploadID   string = "/upload"
+	DownloadID string = "/download"
+	QueryID    string = "/query"
 )
 
 type ConnectionManager interface {
@@ -73,11 +73,6 @@ func (gcm *GenericConnectionManager) ConnectWithWebsocket(ctx context.Context, c
 	defer gcm.mutex.Unlock()
 
 	connector := websocketConnector.NewWebSocketConnector(url)
-
-	err := connector.Connect(ctx)
-	if err != nil {
-		return err
-	}
 
 	gcm.connections[connectionId] = connector
 	return nil

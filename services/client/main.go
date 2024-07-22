@@ -127,6 +127,13 @@ func UploadDag(ctx context.Context, path string) {
 		log.Fatal(err)
 	}
 
+	/*
+		err = conMgr.ConnectWithWebsocket(ctx, "default", "ws://127.0.0.1:9001")
+		if err != nil {
+			log.Fatal(err)
+		}
+	*/
+
 	jsonData, _ := dag.ToJSON()
 	os.WriteFile("before_upload.json", jsonData, 0644)
 
@@ -240,14 +247,21 @@ func QueryDag() {
 		log.Fatal(err)
 	}
 
-	peerId, err := peer.IDFromPublicKey(*libp2pPubKey)
+	_, err = peer.IDFromPublicKey(*libp2pPubKey)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	conMgr := connmgr.NewGenericConnectionManager()
 
-	err = conMgr.ConnectWithLibp2p(ctx, "default", fmt.Sprintf("/ip4/127.0.0.1/udp/9000/quic-v1/p2p/%s", peerId.String()), libp2p.Transport(libp2pquic.NewTransport))
+	/*
+		err = conMgr.ConnectWithLibp2p(ctx, "default", fmt.Sprintf("/ip4/127.0.0.1/udp/9000/quic-v1/p2p/%s", peerId.String()), libp2p.Transport(libp2pquic.NewTransport))
+		if err != nil {
+			log.Fatal(err)
+		}
+	*/
+
+	err = conMgr.ConnectWithWebsocket(ctx, "default", "wss://localhost:9001")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -358,7 +372,8 @@ func UploadEvent(ctx context.Context) {
 		IDs: []string{okEnv.EventID},
 	}
 
-	events, err := connmgr.QueryEvents(ctx, conMgr, "default", []nostr.Filter{filter}, nil)
+	subId := "default"
+	events, err := connmgr.QueryEvents(ctx, conMgr, "default", []nostr.Filter{filter}, &subId)
 	if err != nil {
 		log.Fatal(err)
 	}

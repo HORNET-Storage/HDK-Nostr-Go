@@ -12,7 +12,7 @@ import (
 )
 
 func DownloadDag(ctx context.Context, connectionManager ConnectionManager, connectionID string, root string, publicKey *string, signature *string, filter *types.DownloadFilter, progressChan chan<- types.DownloadProgress) (context.Context, *merkle_dag.Dag, error) {
-	stream, err := connectionManager.GetStream(ctx, connectionID, DownloadV1)
+	stream, err := connectionManager.GetStream(ctx, connectionID, DownloadID)
 	if err != nil {
 		return ctx, nil, fmt.Errorf("failed to get stream for connection %s: %w", connectionID, err)
 	}

@@ -15,6 +15,7 @@ require (
 )
 
 require (
+	github.com/andybalholm/brotli v1.1.0 // indirect
 	github.com/benbjohnson/clock v1.3.5 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
@@ -25,6 +26,7 @@ require (
 	github.com/decred/dcrd/crypto/blake256 v1.0.1 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/elastic/gosigar v0.14.2 // indirect
+	github.com/fasthttp/websocket v1.5.8 // indirect
 	github.com/flynn/noise v1.1.0 // indirect
 	github.com/francoispqt/gojay v1.2.13 // indirect
 	github.com/go-task/slim-sprig v0.0.0-20230315185526-52ccab3ef572 // indirect
@@ -32,10 +34,11 @@ require (
 	github.com/gobwas/pool v0.2.1 // indirect
 	github.com/gobwas/ws v1.2.1 // indirect
 	github.com/godbus/dbus/v5 v5.1.0 // indirect
+	github.com/gofiber/fiber/v2 v2.52.5 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/google/gopacket v1.1.19 // indirect
 	github.com/google/pprof v0.0.0-20240207164012-fb44976bdcd5 // indirect
-	github.com/google/uuid v1.4.0 // indirect
+	github.com/google/uuid v1.6.0 // indirect
 	github.com/huin/goupnp v1.3.0 // indirect
 	github.com/ipfs/go-log/v2 v2.5.1 // indirect
 	github.com/jackpal/go-nat-pmp v1.0.2 // indirect
@@ -52,6 +55,8 @@ require (
 	github.com/libp2p/go-yamux/v4 v4.0.1 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/marten-seemann/tcp v0.0.0-20210406111302-dfbc87cc63fd // indirect
+	github.com/mattn/go-colorable v0.1.13 // indirect
+	github.com/mattn/go-runewidth v0.0.15 // indirect
 	github.com/miekg/dns v1.1.58 // indirect
 	github.com/mikioh/tcpinfo v0.0.0-20190314235526-30a79bb1804b // indirect
 	github.com/mikioh/tcpopt v0.0.0-20190314235656-172688c1accc // indirect
@@ -61,6 +66,7 @@ require (
 	github.com/onsi/ginkgo/v2 v2.15.0 // indirect
 	github.com/opencontainers/runtime-spec v1.2.0 // indirect
 	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58 // indirect
+	github.com/philhofer/fwd v1.1.2 // indirect
 	github.com/pion/datachannel v1.5.6 // indirect
 	github.com/pion/dtls/v2 v2.2.11 // indirect
 	github.com/pion/ice/v2 v2.3.25 // indirect
@@ -88,11 +94,18 @@ require (
 	github.com/quic-go/quic-go v0.44.0 // indirect
 	github.com/quic-go/webtransport-go v0.8.0 // indirect
 	github.com/raulk/go-watchdog v1.3.0 // indirect
+	github.com/rivo/uniseg v0.2.0 // indirect
+	github.com/savsgio/dictpool v0.0.0-20221023140959-7bf2e61cea94 // indirect
+	github.com/savsgio/gotils v0.0.0-20240303185622-093b76447511 // indirect
 	github.com/stretchr/testify v1.9.0 // indirect
 	github.com/tidwall/gjson v1.14.4 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.0 // indirect
+	github.com/tinylib/msgp v1.1.8 // indirect
 	github.com/txaty/gool v0.1.5 // indirect
+	github.com/valyala/bytebufferpool v1.0.0 // indirect
+	github.com/valyala/fasthttp v1.52.0 // indirect
+	github.com/valyala/tcplisten v1.0.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	go.uber.org/dig v1.17.1 // indirect
 	go.uber.org/fx v1.21.1 // indirect
@@ -111,6 +124,8 @@ require (
 	github.com/btcsuite/btcd/btcec/v2 v2.3.3
 	github.com/btcsuite/btcd/chaincfg/chainhash v1.0.2 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.3.0
+	github.com/gofiber/contrib/websocket v1.3.2
+	github.com/gofiber/websocket/v2 v2.2.1
 	github.com/gorilla/websocket v1.5.2
 	github.com/ipfs/go-cid v0.4.1
 	github.com/klauspost/compress v1.17.8 // indirect

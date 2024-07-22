@@ -2,6 +2,8 @@ package websocket
 
 import (
 	"context"
+	"fmt"
+	"log"
 
 	"github.com/gorilla/websocket"
 
@@ -14,16 +16,11 @@ type WebSocketConnector struct {
 }
 
 func NewWebSocketConnector(url string) *WebSocketConnector {
-	return &WebSocketConnector{URL: url}
+	return &WebSocketConnector{URL: fmt.Sprintf("%s/scionic", url)}
 }
 
 func (wsc *WebSocketConnector) Connect(ctx context.Context) error {
-	var d websocket.Dialer
-	conn, _, err := d.DialContext(ctx, wsc.URL, nil)
-	if err != nil {
-		return err
-	}
-	wsc.Conn = conn
+	log.Panicln("This does not need to be called for websockets, just use OpenStream")
 	return nil
 }
 
@@ -32,5 +29,12 @@ func (wsc *WebSocketConnector) Disconnect() error {
 }
 
 func (wsc *WebSocketConnector) OpenStream(ctx context.Context, protocolID string) (types.Stream, error) {
+	var d websocket.Dialer
+	conn, _, err := d.DialContext(ctx, fmt.Sprintf("%s/%s", wsc.URL, protocolID), nil)
+	if err != nil {
+		return nil, err
+	}
+	wsc.Conn = conn
+
 	return &WebSocketStream{conn: wsc.Conn, ctx: ctx}, nil
 }

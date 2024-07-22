@@ -10,7 +10,7 @@ import (
 )
 
 func QueryDag(ctx context.Context, connectionManager ConnectionManager, connectionID string, query map[string]string) (context.Context, *[]string, error) {
-	stream, err := connectionManager.GetStream(ctx, connectionID, QueryV1)
+	stream, err := connectionManager.GetStream(ctx, connectionID, QueryID)
 	if err != nil {
 		return ctx, nil, fmt.Errorf("failed to get stream for connection %s: %w", connectionID, err)
 	}
