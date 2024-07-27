@@ -44,29 +44,26 @@ func UploadBlob(serverURL string, pubkey string, data []byte) error {
 	return nil
 }
 
-func GetBlob(serverURL string, hash string) ([]byte, string, error) {
+func GetBlob(serverURL string, hash string) ([]byte, error) {
 	url := fmt.Sprintf("%s/blossom/%s", serverURL, hash)
 
 	// Send GET request
 	resp, err := http.Get(url)
 	if err != nil {
-		return nil, "", fmt.Errorf("error sending request: %w", err)
+		return nil, fmt.Errorf("error sending request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	// Check the response status
 	if resp.StatusCode != http.StatusOK {
-		return nil, "", fmt.Errorf("server returned non-OK status: %s", resp.Status)
+		return nil, fmt.Errorf("server returned non-OK status: %s", resp.Status)
 	}
 
 	// Read the response body
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, "", fmt.Errorf("error reading response body: %w", err)
+		return nil, fmt.Errorf("error reading response body: %w", err)
 	}
 
-	// Get the content type
-	contentType := resp.Header.Get("Content-Type")
-
-	return data, contentType, nil
+	return data, nil
 }
