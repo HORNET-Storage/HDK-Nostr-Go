@@ -1,4 +1,6 @@
-# Go Hornet Storage Lib
+# HDK: H.O.R.N.E.T.S Development Kit
+
+## Empowering App Developers
 
 This Go library allows desktop apps to connect and communicate with the Hornet Storage relay. We have made the functions as simple as possible while still exposing lower level functionality for more advanced use cases and customization.
 
