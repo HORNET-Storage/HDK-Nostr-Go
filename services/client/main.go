@@ -29,8 +29,8 @@ import (
 
 // These are example keys generated for the purpose of this test client
 // Please do not use them for anything other than this
-const npub string = "npub1c25aedfd38f9fed72b383f6eefaea9f21dd58ec2c9989e0cc275cb5296adec17"
-const nsec string = "nsec125b627e87f6dc7d8f961d58f780a1177f373859d594272b4d4067b721a2153f7"
+const npub string = "npub128qpftun6mzv3gh7pfcsq3sefgqwruz43kuhhu78hq99jeak5a0sstnu23"
+const nsec string = "nsec1yas03jagdjsr8su00g92jurf7am3dldvu9tckyz796z8efpa594qp2nelz"
 
 func main() {
 	ctx := context.Background()
