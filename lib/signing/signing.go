@@ -87,6 +87,15 @@ func SignCID(cid cid.Cid, privateKey *btcec.PrivateKey) (*schnorr.Signature, err
 	return signature, nil
 }
 
+func SignSerializedCid(serializedCid string, privateKey *btcec.PrivateKey) (*schnorr.Signature, error) {
+	cid, err := cid.Parse(serializedCid)
+	if err != nil {
+		return nil, err
+	}
+
+	return SignCID(cid, privateKey)
+}
+
 func VerifySignature(signature *schnorr.Signature, data []byte, publicKey *secp256k1.PublicKey) error {
 	result := signature.Verify(data, publicKey)
 	if !result {

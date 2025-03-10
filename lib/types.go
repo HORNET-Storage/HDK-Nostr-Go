@@ -3,15 +3,14 @@ package lib
 import (
 	"context"
 
-	merkle_dag "github.com/HORNET-Storage/scionic-merkletree/dag"
+	merkle_dag "github.com/HORNET-Storage/Scionic-Merkle-Tree/dag"
+	"github.com/btcsuite/btcd/btcec/v2/schnorr"
+	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 )
 
 type UploadMessage struct {
 	Root      string
-	Count     int
-	Leaf      merkle_dag.DagLeaf
-	Parent    string
-	Branch    *merkle_dag.ClassicTreeBranch
+	Packet    merkle_dag.SerializableTransmissionPacket
 	PublicKey string
 	Signature string
 }
@@ -35,6 +34,12 @@ type DownloadFilter struct {
 	IncludeContent bool // IncludeContent from LeafLabelRange always overrides this
 }
 
+type DagData struct {
+	PublicKey secp256k1.PublicKey
+	Signature schnorr.Signature
+	Dag       merkle_dag.Dag
+}
+
 type BlockData struct {
 	Leaf   merkle_dag.DagLeaf
 	Branch merkle_dag.ClassicTreeBranch
@@ -48,8 +53,23 @@ type ErrorMessage struct {
 	Message string
 }
 
+type QueryFilter struct {
+	Names   []string
+	PubKeys []string
+	Tags    map[string]string
+}
+
+type TagFilter struct {
+	Tags    map[string]string
+	OrderBy string
+}
+
 type QueryMessage struct {
 	QueryFilter map[string]string
+}
+
+type AdvancedQueryMessage struct {
+	Filter QueryFilter
 }
 
 type QueryResponse struct {

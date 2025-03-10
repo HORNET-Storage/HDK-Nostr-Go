@@ -6,7 +6,6 @@ import (
 
 	"bufio"
 	"context"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -16,11 +15,12 @@ import (
 	"syscall"
 	"time"
 
+	merkle_dag "github.com/HORNET-Storage/Scionic-Merkle-Tree/dag"
 	"github.com/HORNET-Storage/go-hornet-storage-lib/lib"
+	types "github.com/HORNET-Storage/go-hornet-storage-lib/lib"
 	"github.com/HORNET-Storage/go-hornet-storage-lib/lib/connmgr"
 	"github.com/HORNET-Storage/go-hornet-storage-lib/lib/signing"
-	merkle_dag "github.com/HORNET-Storage/scionic-merkletree/dag"
-	"github.com/ipfs/go-cid"
+
 	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p/core/peer"
 	libp2pquic "github.com/libp2p/go-libp2p/p2p/transport/quic"
@@ -91,7 +91,7 @@ func Cleanup(ctx context.Context) {
 
 func UploadDag(ctx context.Context, path string) {
 	// Create a new dag from a directory
-	dag, err := merkle_dag.CreateDag(path, true)
+	dag, err := merkle_dag.CreateDag(path, false)
 	if err != nil {
 		fmt.Println("Error: ", err)
 		os.Exit(1)
@@ -110,6 +110,24 @@ func UploadDag(ctx context.Context, path string) {
 		log.Fatal(err)
 	}
 
+	_, pubKeyTest, err := signing.DeserializePrivateKey(nsec)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	test1, err := signing.SerializePublicKey(pubKeyTest)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	test2, err := signing.SerializePublicKey(publicKey)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Println(*test1)
+	fmt.Println(*test2)
+
 	libp2pPubKey, err := signing.ConvertPubKeyToLibp2pPubKey(publicKey)
 	if err != nil {
 		log.Fatal(err)
@@ -127,13 +145,6 @@ func UploadDag(ctx context.Context, path string) {
 		log.Fatal(err)
 	}
 
-	/*
-		err = conMgr.ConnectWithWebsocket(ctx, "default", "ws://127.0.0.1:9001")
-		if err != nil {
-			log.Fatal(err)
-		}
-	*/
-
 	jsonData, _ := dag.ToJSON()
 	os.WriteFile("before_upload.json", jsonData, 0644)
 
@@ -141,15 +152,6 @@ func UploadDag(ctx context.Context, path string) {
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	signature, err := signing.SignCID(cid.MustParse(dag.Root), privateKey)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	serializedSignature := hex.EncodeToString(signature.Serialize())
-
-	pubKey := npub
 
 	progressChan := make(chan lib.UploadProgress)
 
@@ -164,7 +166,7 @@ func UploadDag(ctx context.Context, path string) {
 	}()
 
 	// Upload the dag to the hornet storage node
-	err = connmgr.UploadDagSingle(ctx, conMgr, "default", dag, &pubKey, &serializedSignature, progressChan)
+	err = connmgr.UploadDagSingle(ctx, conMgr, "default", dag, privateKey, progressChan)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -210,26 +212,16 @@ func DownloadDag(ctx context.Context, root string) {
 		}
 	}()
 
-	// Upload the dag to the hornet storage node
-	_, dag, err := connmgr.DownloadDag(ctx, conMgr, "default", root, nil, nil, nil, progressChan)
+	_, dag, err := connmgr.DownloadDag(ctx, conMgr, "default", root, nil, nil, progressChan)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	close(progressChan)
 
-	// Verify the entire dag
-	err = dag.Verify()
-	if err != nil {
-		log.Fatalf("Error: %s", err)
-	}
-
-	log.Println("Dag verified correctly")
-
-	jsonData, _ := json.Marshal(dag)
+	jsonData, _ := json.Marshal(dag.Dag.ToSerializable())
 	os.WriteFile("after_download.json", jsonData, 0644)
 
-	// Disconnect client as we no longer need it
 	conMgr.Disconnect("default")
 }
 
@@ -247,47 +239,54 @@ func QueryDag() {
 		log.Fatal(err)
 	}
 
-	_, err = peer.IDFromPublicKey(*libp2pPubKey)
+	peerId, err := peer.IDFromPublicKey(*libp2pPubKey)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	conMgr := connmgr.NewGenericConnectionManager()
 
-	/*
-		err = conMgr.ConnectWithLibp2p(ctx, "default", fmt.Sprintf("/ip4/127.0.0.1/udp/9000/quic-v1/p2p/%s", peerId.String()), libp2p.Transport(libp2pquic.NewTransport))
-		if err != nil {
-			log.Fatal(err)
-		}
-	*/
-
-	err = conMgr.ConnectWithWebsocket(ctx, "default", "wss://localhost:9001")
+	err = conMgr.ConnectWithLibp2p(ctx, "default", fmt.Sprintf("/ip4/127.0.0.1/udp/9000/quic-v1/p2p/%s", peerId.String()), libp2p.Transport(libp2pquic.NewTransport))
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	query := map[string]string{
-		npub: "nestrbox",
+	query := types.QueryFilter{
+		Tags: map[string]string{
+			"repo_id": "51c014af93d6c4c8a2fe0a710046194a00e1f0558db97bf3c7b80a5967b6a75f:nestr",
+		},
 	}
 
 	// Upload the dag to the hornet storage node
-	_, hashes, err := connmgr.QueryDag(ctx, conMgr, "default", query)
+	hashes, err := connmgr.QueryDag(ctx, conMgr, "default", query)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	data, err := json.Marshal(*hashes)
+	data, err := json.Marshal(hashes)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	fmt.Println("RESULTS")
 
-	for _, hash := range *hashes {
+	for _, hash := range hashes {
 		fmt.Println(hash)
 	}
 
 	fmt.Println(data)
+
+	if len(hashes) > 0 {
+		for _, hash := range hashes {
+			_, dag, err := connmgr.DownloadDag(ctx, conMgr, "default", hash, nil, nil, nil)
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			jsonData, _ := json.Marshal(dag.Dag.ToSerializable())
+			os.WriteFile(fmt.Sprintf("%s.json", hash), jsonData, 0644)
+		}
+	}
 
 	// Disconnect client as we no longer need it
 	conMgr.Disconnect("default")

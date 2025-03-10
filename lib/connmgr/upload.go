@@ -2,18 +2,20 @@ package connmgr
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
-	"log"
 
+	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/fxamacker/cbor/v2"
 
+	merkle_dag "github.com/HORNET-Storage/Scionic-Merkle-Tree/dag"
 	types "github.com/HORNET-Storage/go-hornet-storage-lib/lib"
-	merkle_dag "github.com/HORNET-Storage/scionic-merkletree/dag"
+	"github.com/HORNET-Storage/go-hornet-storage-lib/lib/signing"
 )
 
-func UploadDag(ctx context.Context, connectionManager ConnectionManager, dag *merkle_dag.Dag, publicKey *string, signature *string, progressChan chan<- types.UploadProgress) error {
+func UploadDag(ctx context.Context, connectionManager ConnectionManager, dag *merkle_dag.Dag, privatekey *secp256k1.PrivateKey, progressChan chan<- types.UploadProgress) error {
 	for connectionID := range connectionManager.ListConnections() {
-		err := UploadDagSingle(ctx, connectionManager, connectionID, dag, publicKey, signature, progressChan)
+		err := UploadDagSingle(ctx, connectionManager, connectionID, dag, privatekey, progressChan)
 		if err != nil {
 			return fmt.Errorf("failed to upload DAG to node %s: %w", connectionID, err)
 		}
@@ -22,19 +24,58 @@ func UploadDag(ctx context.Context, connectionManager ConnectionManager, dag *me
 	return nil
 }
 
-func UploadDagSingle(ctx context.Context, connectionManager ConnectionManager, connectionID string, dag *merkle_dag.Dag, publicKey *string, signature *string, progressChan chan<- types.UploadProgress) error {
+func UploadDagSingle(ctx context.Context, connectionManager ConnectionManager, connectionID string, dag *merkle_dag.Dag, privatekey *secp256k1.PrivateKey, progressChan chan<- types.UploadProgress) error {
 	stream, err := connectionManager.GetStream(ctx, connectionID, UploadID)
 	if err != nil {
 		return fmt.Errorf("failed to get stream for connection %s: %w", connectionID, err)
 	}
 	defer stream.Close()
 
+	if privatekey == nil {
+		return fmt.Errorf("unable to sign data due to missing private key")
+	}
+
+	signature, err := signing.SignData([]byte(dag.Root), privatekey)
+	if err != nil {
+		return fmt.Errorf("Failed to sign dag root")
+	}
+
+	serializedSignature := signature.Serialize()
+
+	serializedPubkey, err := signing.SerializePublicKey(privatekey.PubKey())
+	if err != nil {
+		return fmt.Errorf("Failed to serialize pubkey")
+	}
+
+	err = signing.VerifySignature(signature, []byte(dag.Root), privatekey.PubKey())
+	if err != nil {
+		return fmt.Errorf("Failed to verify signature")
+	}
+
 	encoder := cbor.NewEncoder(stream)
 	totalLeafs := len(dag.Leafs)
 	leafsSent := 0
+	sequence := dag.GetLeafSequence()
 
-	err = dag.IterateDag(func(leaf *merkle_dag.DagLeaf, parent *merkle_dag.DagLeaf) error {
-		err := sendLeaf(ctx, stream, encoder, leaf, parent, dag, publicKey, signature)
+	for i, packet := range sequence {
+		message := types.UploadMessage{
+			Root:   dag.Root,
+			Packet: *packet.ToSerializable(),
+		}
+
+		// Only add the pub key and signature to the first packet as that's what contains the root
+		if i == 0 {
+			message.PublicKey = *serializedPubkey
+			message.Signature = hex.EncodeToString(serializedSignature)
+		}
+
+		if err := encoder.Encode(&message); err != nil {
+			return err
+		}
+
+		if result := WaitForResponse(ctx, stream); !result {
+			return fmt.Errorf("did not recieve a valid response")
+		}
 
 		if err != nil {
 			if progressChan != nil {
@@ -48,90 +89,6 @@ func UploadDagSingle(ctx context.Context, connectionManager ConnectionManager, c
 
 		if progressChan != nil {
 			progressChan <- types.UploadProgress{ConnectionID: connectionID, LeafsSent: leafsSent, TotalLeafs: totalLeafs}
-		}
-
-		return nil
-	})
-	if err != nil {
-		return fmt.Errorf("failed to iterate and send DAG: %w", err)
-	}
-
-	return nil
-}
-
-func sendLeaf(ctx context.Context, stream types.Stream, encoder *cbor.Encoder, leaf *merkle_dag.DagLeaf, parent *merkle_dag.DagLeaf, dag *merkle_dag.Dag, publicKey *string, signature *string) error {
-	count := len(dag.Leafs)
-
-	if leaf.Hash == dag.Root {
-		message := types.UploadMessage{
-			Root:  dag.Root,
-			Count: count,
-			Leaf:  *leaf,
-		}
-
-		if publicKey != nil {
-			message.PublicKey = *publicKey
-		}
-		if signature != nil {
-			message.Signature = *signature
-		}
-
-		log.Println("Sending leaf")
-		if err := encoder.Encode(message); err != nil {
-			return err
-		}
-
-		log.Println("Waiting for response")
-		if result := WaitForResponse(ctx, stream); !result {
-			return fmt.Errorf("did not receive a valid response")
-		}
-	} else {
-		err := leaf.VerifyLeaf()
-		if err != nil {
-			log.Println("Failed to verify leaf")
-			return err
-		}
-
-		label := merkle_dag.GetLabel(leaf.Hash)
-
-		var branch *merkle_dag.ClassicTreeBranch
-
-		if len(leaf.Links) > 1 {
-			branch, err = parent.GetBranch(label)
-			if err != nil {
-				log.Println("Failed to get branch")
-				return err
-			}
-
-			err = parent.VerifyBranch(branch)
-			if err != nil {
-				log.Println("Failed to verify branch")
-				return err
-			}
-		}
-
-		message := types.UploadMessage{
-			Root:   dag.Root,
-			Count:  count,
-			Leaf:   *leaf,
-			Parent: parent.Hash,
-			Branch: branch,
-		}
-
-		if publicKey != nil {
-			message.PublicKey = *publicKey
-		}
-
-		if signature != nil {
-			message.Signature = *signature
-		}
-
-		if err := encoder.Encode(&message); err != nil {
-			return err
-		}
-
-		if result := WaitForResponse(ctx, stream); !result {
-			return fmt.Errorf("did not recieve a valid response")
 		}
 	}
 
