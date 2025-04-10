@@ -116,6 +116,15 @@ func VerifyCIDSignature(signature *schnorr.Signature, cid cid.Cid, publicKey *se
 	return nil
 }
 
+func VerifySerializedCIDSignature(signature *schnorr.Signature, serializedCid string, publicKey *secp256k1.PublicKey) error {
+	cid, err := cid.Parse(serializedCid)
+	if err != nil {
+		return err
+	}
+
+	return VerifyCIDSignature(signature, cid, publicKey)
+}
+
 func GeneratePrivateKey() (*secp256k1.PrivateKey, error) {
 	privateKey, err := btcec.NewPrivateKey()
 	if err != nil {

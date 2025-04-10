@@ -11,6 +11,13 @@ type Libp2pStream struct {
 	ctx    context.Context
 }
 
+func New(stream network.Stream, ctx context.Context) *Libp2pStream {
+	return &Libp2pStream{
+		stream: stream,
+		ctx:    ctx,
+	}
+}
+
 func (ls *Libp2pStream) Read(msg []byte) (int, error) {
 	return ls.stream.Read(msg)
 }

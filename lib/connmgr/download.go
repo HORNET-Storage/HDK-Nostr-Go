@@ -3,16 +3,13 @@ package connmgr
 import (
 	"context"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
-	"os"
 
 	merkle_dag "github.com/HORNET-Storage/Scionic-Merkle-Tree/dag"
 	types "github.com/HORNET-Storage/go-hornet-storage-lib/lib"
 	"github.com/HORNET-Storage/go-hornet-storage-lib/lib/signing"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
-	"github.com/fxamacker/cbor/v2"
 )
 
 func DownloadDag(ctx context.Context, connectionManager ConnectionManager, connectionID string, root string, privatekey *secp256k1.PrivateKey, filter *types.DownloadFilter, progressChan chan<- types.DownloadProgress) (context.Context, *types.DagData, error) {
@@ -27,7 +24,7 @@ func DownloadDag(ctx context.Context, connectionManager ConnectionManager, conne
 
 	// Because this is a request and not an upload, we don't always care about the request being signed, signed requests are for locked resources etc
 	if privatekey != nil {
-		sig, err := signing.SignData([]byte(root), privatekey)
+		sig, err := signing.SignSerializedCid(root, privatekey)
 		if err != nil {
 			return ctx, nil, err
 		}
@@ -39,7 +36,7 @@ func DownloadDag(ctx context.Context, connectionManager ConnectionManager, conne
 			return ctx, nil, err
 		}
 
-		err = signing.VerifySignature(sig, []byte(root), privatekey.PubKey())
+		err = signing.VerifySerializedCIDSignature(sig, root, privatekey.PubKey())
 		if err != nil {
 			return ctx, nil, err
 		}
@@ -49,8 +46,6 @@ func DownloadDag(ctx context.Context, connectionManager ConnectionManager, conne
 		publicKey = serializedPubkey
 		signature = &encodedSignature
 	}
-
-	streamEncoder := cbor.NewEncoder(stream)
 
 	downloadMessage := types.DownloadMessage{
 		Root: root,
@@ -65,13 +60,13 @@ func DownloadDag(ctx context.Context, connectionManager ConnectionManager, conne
 		downloadMessage.Filter = filter
 	}
 
-	if err := streamEncoder.Encode(&downloadMessage); err != nil {
+	if err := WriteMessageToStream(stream, downloadMessage); err != nil {
 		return ctx, nil, err
 	}
 
-	result, message := WaitForUploadMessage(ctx, stream)
-	if !result {
-		return ctx, nil, fmt.Errorf("failed to wait for upload message")
+	message, err := WaitForUploadMessage(stream)
+	if err != nil {
+		return ctx, nil, err
 	}
 
 	dagPublicKey, err := signing.DeserializePublicKey(message.PublicKey)
@@ -89,7 +84,7 @@ func DownloadDag(ctx context.Context, connectionManager ConnectionManager, conne
 		return nil, nil, err
 	}
 
-	err = signing.VerifySignature(dagSignature, []byte(message.Root), dagPublicKey)
+	err = signing.VerifySerializedCIDSignature(dagSignature, message.Root, dagPublicKey)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -110,21 +105,19 @@ func DownloadDag(ctx context.Context, connectionManager ConnectionManager, conne
 
 	err = dag.Verify()
 	if err != nil {
-		fmt.Printf("failed to verify partial dag with %d leaves\n", len(dag.Leafs))
 		return ctx, nil, err
 	}
 
-	err = WriteResponseToStream(ctx, stream, true)
+	err = WriteResponseToStream(stream, true)
 	if err != nil {
 		return ctx, nil, err
 	}
 
 	for {
-		result, message := WaitForUploadMessage(ctx, stream)
-		if !result {
-			return ctx, nil, fmt.Errorf("failed to wait for upload message")
+		message, err := WaitForUploadMessage(stream)
+		if err != nil {
+			return ctx, nil, err
 		}
-
 		packet := merkle_dag.TransmissionPacketFromSerializable(&message.Packet)
 
 		err = packet.Leaf.VerifyLeaf()
@@ -139,10 +132,7 @@ func DownloadDag(ctx context.Context, connectionManager ConnectionManager, conne
 			return ctx, nil, err
 		}
 
-		jsonData, _ := json.Marshal(dag.ToSerializable())
-		os.WriteFile(fmt.Sprintf("download_dag_%d.json", len(dag.Leafs)), jsonData, 0644)
-
-		err = WriteResponseToStream(ctx, stream, true)
+		err = WriteResponseToStream(stream, true)
 		if err != nil {
 			return ctx, nil, err
 		}
@@ -152,20 +142,14 @@ func DownloadDag(ctx context.Context, connectionManager ConnectionManager, conne
 		}
 
 		if len(dag.Leafs) >= (dag.Leafs[dag.Root].LeafCount + 1) {
-			fmt.Println("All leaves receieved")
 			break
 		}
 	}
-
-	jsonData, _ := json.Marshal(dag.ToSerializable())
-	os.WriteFile("download_dag.json", jsonData, 0644)
 
 	err = dag.Verify()
 	if err != nil {
 		return ctx, nil, err
 	}
-
-	fmt.Println("Dag verified")
 
 	dagData := &types.DagData{
 		PublicKey: *dagPublicKey,

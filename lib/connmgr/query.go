@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/fxamacker/cbor/v2"
-
 	types "github.com/HORNET-Storage/go-hornet-storage-lib/lib"
 )
 
@@ -16,13 +14,11 @@ func QueryDag(ctx context.Context, connectionManager ConnectionManager, connecti
 	}
 	defer stream.Close()
 
-	streamEncoder := cbor.NewEncoder(stream)
-
 	queryMessage := types.AdvancedQueryMessage{
 		Filter: query,
 	}
 
-	if err := streamEncoder.Encode(&queryMessage); err != nil {
+	if err := WriteMessageToStream(stream, queryMessage); err != nil {
 		return nil, err
 	}
 

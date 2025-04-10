@@ -1,90 +1,118 @@
 package connmgr
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
+	"reflect"
 	"time"
 
 	types "github.com/HORNET-Storage/go-hornet-storage-lib/lib"
 	"github.com/fxamacker/cbor/v2"
 )
 
-func WaitForResponse(ctx context.Context, stream types.Stream) bool {
-	streamDecoder := cbor.NewDecoder(stream)
-
-	var response types.ResponseMessage
-
-	timeout := time.NewTimer(5 * time.Second)
-
-wait:
-	for {
-		select {
-		case <-timeout.C:
-			return false
-		default:
-			if err := streamDecoder.Decode(&response); err == nil {
-				break wait
-			}
-		}
+func BuildErrorMessage(message string, err error) types.ErrorMessage {
+	log.Println("\n====[STREAM ERROR MESSAGE]====")
+	if len(message) > 0 {
+		log.Println(message)
 	}
+	if err != nil {
+		log.Println(err)
+	}
+	log.Println("")
 
-	return response.Ok
+	return types.ErrorMessage{
+		Message: fmt.Sprintf(message, err),
+	}
 }
 
-func WaitForUploadMessage(ctx context.Context, stream types.Stream) (bool, *types.UploadMessage) {
-	streamDecoder := cbor.NewDecoder(stream)
-
-	var message types.UploadMessage
-
-	timeout := time.NewTimer(5 * time.Second)
-
-wait:
-	for {
-		select {
-		case <-timeout.C:
-			return false, nil
-		default:
-			err := streamDecoder.Decode(&message)
-
-			if err == io.EOF {
-				return false, nil
-			}
-
-			if err != nil {
-				log.Printf("Error reading from stream: %e", err)
-			}
-
-			if err == nil {
-				break wait
-			}
-		}
-	}
-
-	return true, &message
-}
-
-func WriteResponseToStream(ctx context.Context, stream types.Stream, response bool) error {
-	streamEncoder := cbor.NewEncoder(stream)
-
-	message := types.ResponseMessage{
+func BuildResponseMessage(response bool) types.ResponseMessage {
+	return types.ResponseMessage{
 		Ok: response,
 	}
+}
 
-	if err := streamEncoder.Encode(&message); err != nil {
-		return err
+func WriteErrorToStream(stream types.Stream, message string, err error) error {
+	log.Println("\n====[STREAM ERROR MESSAGE]====")
+	if len(message) > 0 {
+		log.Println(message)
 	}
+	if err != nil {
+		log.Println(err)
+	}
+	log.Println("")
 
-	return nil
+	return WriteMessageToStream(stream, BuildErrorMessage(message, err))
+}
+
+func WriteResponseToStream(stream types.Stream, response bool) error {
+	return WriteMessageToStream(stream, BuildResponseMessage(response))
+}
+
+func WaitForResponse(stream types.Stream) (*types.ResponseMessage, error) {
+	return ReadMessageFromStream[types.ResponseMessage](stream)
+}
+
+func WaitForUploadMessage(stream types.Stream) (*types.UploadMessage, error) {
+	return ReadMessageFromStream[types.UploadMessage](stream)
+}
+
+func WaitForDownloadMessage(stream types.Stream) (*types.DownloadMessage, error) {
+	return ReadMessageFromStream[types.DownloadMessage](stream)
+}
+
+func WaitForQueryMessage(stream types.Stream) (*types.QueryMessage, error) {
+	return ReadMessageFromStream[types.QueryMessage](stream)
+}
+
+func WaitForAdvancedQueryMessage(stream types.Stream) (*types.AdvancedQueryMessage, error) {
+	return ReadMessageFromStream[types.AdvancedQueryMessage](stream)
 }
 
 func ReadMessageFromStream[T any](stream types.Stream) (*T, error) {
-	streamDecoder := cbor.NewDecoder(stream)
+	envelope, err := ReadEnvelopeFromStream(stream)
+	if err != nil {
+		return nil, err
+	}
+
+	if envelope.Type == "error" {
+		errorBytes, err := cbor.Marshal(envelope.Payload)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal error payload: %w", err)
+		}
+
+		var errorMsg types.ErrorMessage
+		if err := cbor.Unmarshal(errorBytes, &errorMsg); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal error payload: %w", err)
+		}
+
+		log.Println("\n====[STREAM ERROR MESSAGE]====")
+		if len(errorMsg.Message) > 0 {
+			log.Println(errorMsg.Message)
+		}
+		log.Println("")
+
+		return nil, fmt.Errorf("remote error: %s", errorMsg.Message)
+	}
+
+	payloadBytes, err := cbor.Marshal(envelope.Payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal payload: %w", err)
+	}
 
 	var message T
+	if err := cbor.Unmarshal(payloadBytes, &message); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal payload to %T: %w", message, err)
+	}
 
+	return &message, nil
+}
+
+func ReadEnvelopeFromStream(stream types.Stream) (*types.MessageEnvelope, error) {
+	streamDecoder := cbor.NewDecoder(stream)
+
+	var envelope types.MessageEnvelope
 	timeout := time.NewTimer(5 * time.Second)
 
 wait:
@@ -93,7 +121,7 @@ wait:
 		case <-timeout.C:
 			return nil, fmt.Errorf("WaitForMessage timed out")
 		default:
-			err := streamDecoder.Decode(&message)
+			err := streamDecoder.Decode(&envelope)
 
 			if err != nil {
 				return nil, err
@@ -107,13 +135,19 @@ wait:
 		}
 	}
 
-	return &message, nil
+	return &envelope, nil
 }
 
 func WriteMessageToStream[T any](stream types.Stream, message T) error {
-	enc := cbor.NewEncoder(stream)
+	typeName := reflect.TypeOf(message).String()
 
-	if err := enc.Encode(&message); err != nil {
+	envelope := types.MessageEnvelope{
+		Type:    typeName,
+		Payload: message,
+	}
+
+	enc := cbor.NewEncoder(stream)
+	if err := enc.Encode(&envelope); err != nil {
 		return err
 	}
 

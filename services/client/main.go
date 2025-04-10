@@ -401,6 +401,24 @@ func TestKeys(ctx context.Context) {
 		log.Fatal(err)
 	}
 
+	privKey, pubKey, err := signing.DeserializePrivateKey(nsec)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	spr, err := signing.SerializePrivateKey(privKey)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	sp, err := signing.SerializePublicKey(pubKey)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	log.Println("private (hex): " + *spr)
+	log.Println("public (hex): " + *sp)
+
 	log.Printf("Keys deserialized properly and your libp2p peer id is: %s\n", peerId)
 }
 

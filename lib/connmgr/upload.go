@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"strconv"
 
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
-	"github.com/fxamacker/cbor/v2"
 
 	merkle_dag "github.com/HORNET-Storage/Scionic-Merkle-Tree/dag"
 	types "github.com/HORNET-Storage/go-hornet-storage-lib/lib"
@@ -35,24 +35,23 @@ func UploadDagSingle(ctx context.Context, connectionManager ConnectionManager, c
 		return fmt.Errorf("unable to sign data due to missing private key")
 	}
 
-	signature, err := signing.SignData([]byte(dag.Root), privatekey)
+	signature, err := signing.SignSerializedCid(dag.Root, privatekey)
 	if err != nil {
-		return fmt.Errorf("Failed to sign dag root")
+		return fmt.Errorf("failed to sign dag root")
 	}
 
 	serializedSignature := signature.Serialize()
 
 	serializedPubkey, err := signing.SerializePublicKey(privatekey.PubKey())
 	if err != nil {
-		return fmt.Errorf("Failed to serialize pubkey")
+		return fmt.Errorf("failed to serialize pubkey")
 	}
 
-	err = signing.VerifySignature(signature, []byte(dag.Root), privatekey.PubKey())
+	err = signing.VerifySerializedCIDSignature(signature, dag.Root, privatekey.PubKey())
 	if err != nil {
-		return fmt.Errorf("Failed to verify signature")
+		return fmt.Errorf("failed to verify signature")
 	}
 
-	encoder := cbor.NewEncoder(stream)
 	totalLeafs := len(dag.Leafs)
 	leafsSent := 0
 	sequence := dag.GetLeafSequence()
@@ -69,11 +68,17 @@ func UploadDagSingle(ctx context.Context, connectionManager ConnectionManager, c
 			message.Signature = hex.EncodeToString(serializedSignature)
 		}
 
-		if err := encoder.Encode(&message); err != nil {
+		if err := WriteMessageToStream(stream, message); err != nil {
 			return err
 		}
 
-		if result := WaitForResponse(ctx, stream); !result {
+		response, err := WaitForResponse(stream)
+		if err != nil {
+			return fmt.Errorf("failed to recieve response")
+		}
+
+		if !response.Ok {
+			fmt.Println("HERE: " + strconv.Itoa(i))
 			return fmt.Errorf("did not recieve a valid response")
 		}
 

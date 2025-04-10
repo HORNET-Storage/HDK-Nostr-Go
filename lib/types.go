@@ -8,6 +8,11 @@ import (
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 )
 
+type MessageEnvelope struct {
+	Type    string      `cbor:"type"`
+	Payload interface{} `cbor:"payload"`
+}
+
 type UploadMessage struct {
 	Root      string
 	Packet    merkle_dag.SerializableTransmissionPacket
@@ -23,15 +28,31 @@ type DownloadMessage struct {
 }
 
 type LeafLabelRange struct {
-	From           string
-	To             string
-	IncludeContent bool
+	From int
+	To   int
 }
 
 type DownloadFilter struct {
-	Leaves         []string
-	LeafRanges     []LeafLabelRange
+	LeafRanges     *LeafLabelRange
 	IncludeContent bool // IncludeContent from LeafLabelRange always overrides this
+}
+
+type QueryFilter struct {
+	Names   []string
+	PubKeys []string
+	Tags    map[string]string
+}
+
+type QueryMessage struct {
+	QueryFilter map[string]string
+}
+
+type AdvancedQueryMessage struct {
+	Filter QueryFilter
+}
+
+type QueryResponse struct {
+	Hashes []string
 }
 
 type DagData struct {
@@ -53,27 +74,9 @@ type ErrorMessage struct {
 	Message string
 }
 
-type QueryFilter struct {
-	Names   []string
-	PubKeys []string
-	Tags    map[string]string
-}
-
 type TagFilter struct {
 	Tags    map[string]string
 	OrderBy string
-}
-
-type QueryMessage struct {
-	QueryFilter map[string]string
-}
-
-type AdvancedQueryMessage struct {
-	Filter QueryFilter
-}
-
-type QueryResponse struct {
-	Hashes []string
 }
 
 type Stream interface {
