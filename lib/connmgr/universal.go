@@ -74,7 +74,7 @@ func SendUniversalEventSingle(ctx context.Context, connectionManager ConnectionM
 			return nil, err
 		}
 
-		return nil, fmt.Errorf(m)
+		return nil, fmt.Errorf("%s", m)
 	case "OK":
 		if len(message) != 4 {
 			return nil, fmt.Errorf("invalid OK message length: %d", len(message))
@@ -94,7 +94,7 @@ func SendUniversalEventSingle(ctx context.Context, connectionManager ConnectionM
 		}
 
 		if !ok {
-			return nil, fmt.Errorf(m)
+			return nil, fmt.Errorf("%s", m)
 		}
 
 		okEnv := &nostr.OKEnvelope{
@@ -160,7 +160,7 @@ func QueryEvents(ctx context.Context, connectionManager ConnectionManager, conne
 				return nil, err
 			}
 
-			return nil, fmt.Errorf(m)
+			return nil, fmt.Errorf("%s", m)
 		case "EVENT":
 			if len(message) != 3 {
 				return nil, fmt.Errorf("invalid event message length: %d", len(message))

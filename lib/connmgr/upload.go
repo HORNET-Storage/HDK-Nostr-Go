@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
-	"strconv"
 
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 
@@ -69,20 +68,27 @@ func UploadDagSingle(ctx context.Context, connectionManager ConnectionManager, c
 		}
 
 		if err := WriteMessageToStream(stream, message); err != nil {
+			if progressChan != nil {
+				progressChan <- types.UploadProgress{ConnectionID: connectionID, LeafsSent: leafsSent, TotalLeafs: totalLeafs, Error: err}
+			}
+
 			return err
 		}
 
 		response, err := WaitForResponse(stream)
 		if err != nil {
-			return fmt.Errorf("failed to recieve response")
+			err = fmt.Errorf("failed to recieve response: %e", err)
+
+			if progressChan != nil {
+				progressChan <- types.UploadProgress{ConnectionID: connectionID, LeafsSent: leafsSent, TotalLeafs: totalLeafs, Error: err}
+			}
+
+			return err
 		}
 
 		if !response.Ok {
-			fmt.Println("HERE: " + strconv.Itoa(i))
-			return fmt.Errorf("did not recieve a valid response")
-		}
+			err = fmt.Errorf("did not recieve a valid response: %e", err)
 
-		if err != nil {
 			if progressChan != nil {
 				progressChan <- types.UploadProgress{ConnectionID: connectionID, LeafsSent: leafsSent, TotalLeafs: totalLeafs, Error: err}
 			}
