@@ -2,7 +2,6 @@ package libp2p
 
 import (
 	"context"
-	"log"
 
 	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p/core/host"
@@ -44,7 +43,6 @@ func (lc *Libp2pConnector) Connect(ctx context.Context) error {
 	if err := lc.Host.Connect(ctx, *lc.Peer); err != nil {
 		return err
 	}
-	log.Println("Connected to:", lc.Peer)
 	return nil
 }
 
