@@ -12,6 +12,7 @@ import (
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/ipfs/go-cid"
 	"github.com/libp2p/go-libp2p/core/crypto"
+	"github.com/libp2p/go-libp2p/core/peer"
 )
 
 const PublicKeyPrefix = "npub1"
@@ -51,6 +52,34 @@ func DeserializePublicKey(serializedKey string) (*secp256k1.PublicKey, error) {
 		return nil, err
 	}
 
+	// Check if this is already a compressed key (33 bytes with compression flag)
+	if len(publicKeyBytes) == 33 && (publicKeyBytes[0] == 0x02 || publicKeyBytes[0] == 0x03) {
+		// This is already compressed, parse it directly to preserve compression flag
+		publicKey, err := btcec.ParsePubKey(publicKeyBytes)
+		if err != nil {
+			return nil, err
+		}
+		return publicKey, nil
+	}
+
+	// For 32-byte keys (Nostr format), try both compression flags
+	if len(publicKeyBytes) == 32 {
+		// Try with 0x03 flag first (odd y-coordinate)
+		compressedBytes2 := append([]byte{0x03}, publicKeyBytes...)
+		if publicKey, err := btcec.ParsePubKey(compressedBytes2); err == nil {
+			return publicKey, nil
+		}
+
+		// Try with 0x02 flag (even y-coordinate)
+		compressedBytes1 := append([]byte{0x02}, publicKeyBytes...)
+		if publicKey, err := btcec.ParsePubKey(compressedBytes1); err == nil {
+			return publicKey, nil
+		}
+
+		return nil, fmt.Errorf("unable to parse 32-byte public key with either compression flag")
+	}
+
+	// Fallback: use schnorr parsing for other formats
 	publicKey, err := schnorr.ParsePubKey(publicKeyBytes)
 	if err != nil {
 		return nil, err
@@ -182,15 +211,29 @@ func SerializePublicKey(publicKey *secp256k1.PublicKey) (*string, error) {
 	return &encodedKey, nil
 }
 
+// ConvertPubKeyToLibp2pPubKey converts a public key directly to a libp2p public key
 func ConvertPubKeyToLibp2pPubKey(publicKey *secp256k1.PublicKey) (*crypto.PubKey, error) {
-	btcecPubKey := (*btcec.PublicKey)(publicKey)
+	compressedPubKey := publicKey.SerializeCompressed()
 
-	pubKeyBytes := btcecPubKey.SerializeCompressed()
-
-	libp2pPubKey, err := crypto.UnmarshalSecp256k1PublicKey(pubKeyBytes)
+	libp2pPubKey, err := crypto.UnmarshalSecp256k1PublicKey(compressedPubKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal to libp2p key: %w", err)
 	}
 
 	return &libp2pPubKey, nil
+}
+
+// ConvertPubKeyToLibp2pPeerID converts a public key directly to a peer ID string
+func ConvertPubKeyToLibp2pPeerID(publicKey *secp256k1.PublicKey) (string, error) {
+	libp2pPubKey, err := ConvertPubKeyToLibp2pPubKey(publicKey)
+	if err != nil {
+		return "", err
+	}
+
+	peerId, err := peer.IDFromPublicKey(*libp2pPubKey)
+	if err != nil {
+		return "", fmt.Errorf("failed to generate peer ID: %w", err)
+	}
+
+	return peerId.String(), nil
 }

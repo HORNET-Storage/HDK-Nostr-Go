@@ -4,8 +4,6 @@ go 1.21
 
 toolchain go1.22.1
 
-//replace github.com/HORNET-Storage/scionic-merkletree => D:\organizations\akashic_record\relevant\golang\scionic-merkletree
-
 require (
 	github.com/HORNET-Storage/Scionic-Merkle-Tree v1.2.2
 	github.com/btcsuite/btcd/btcutil v1.1.3
