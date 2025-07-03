@@ -183,25 +183,7 @@ func SerializePublicKey(publicKey *secp256k1.PublicKey) (*string, error) {
 }
 
 func ConvertPubKeyToLibp2pPubKey(publicKey *secp256k1.PublicKey) (*crypto.PubKey, error) {
-	serializedKey, err := SerializePublicKey(publicKey)
-	if err != nil {
-		return nil, err
-	}
-
-	publicKeyBytes, err := DecodeKey(*serializedKey)
-	if err != nil {
-		return nil, err
-	}
-
-	// Create compressed format by prepending 0x03
-	compressedPubKey := make([]byte, 33)
-	compressedPubKey[0] = 0x03 // Using odd y-coordinate
-	copy(compressedPubKey[1:], publicKeyBytes)
-
-	btcecPubKey, err := btcec.ParsePubKey(compressedPubKey)
-	if err != nil {
-		return nil, err
-	}
+	btcecPubKey := (*btcec.PublicKey)(publicKey)
 
 	pubKeyBytes := btcecPubKey.SerializeCompressed()
 
