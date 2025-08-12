@@ -10,6 +10,8 @@ git.apache.org/thrift.git v0.0.0-20180902110319-2566ecd5d999/go.mod h1:fPE2ZNJGy
 github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=
 github.com/HORNET-Storage/Scionic-Merkle-Tree v1.2.2 h1:TNVicqC6K7a8uvaEo+EnjoGqEmOoU7F4W70fOT9NeoE=
 github.com/HORNET-Storage/Scionic-Merkle-Tree v1.2.2/go.mod h1:6D9s+1RWxsJLcB1Na+7fOYwqSedyrERbYGs2RSgs3q0=
+github.com/HORNET-Storage/Scionic-Merkle-Tree v1.2.5 h1:4CLWHpz+/aNx/HnLeSIiLKOBzRqj3uRwK/yJiW14zVw=
+github.com/HORNET-Storage/Scionic-Merkle-Tree v1.2.5/go.mod h1:6D9s+1RWxsJLcB1Na+7fOYwqSedyrERbYGs2RSgs3q0=
 github.com/aead/siphash v1.0.1/go.mod h1:Nywa3cDsYNNK3gaciGTWPwHt0wlpNV15vwmswBAUSII=
 github.com/anmitsu/go-shlex v0.0.0-20161002113705-648efa622239/go.mod h1:2FmKhYUyUczH0OGQWaF5ceTx0UBShxjsH6f8oGKYe2c=
 github.com/benbjohnson/clock v1.1.0/go.mod h1:J11/hYXuz8f4ySSvYwY0FKfm+ezbsZBKZxNJlLklBHA=
