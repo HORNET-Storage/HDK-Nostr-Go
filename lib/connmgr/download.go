@@ -101,9 +101,7 @@ func DownloadDag(ctx context.Context, connectionManager ConnectionManager, conne
 		return ctx, nil, err
 	}
 
-	dag.ApplyTransmissionPacket(packet)
-
-	err = dag.Verify()
+	err = dag.ApplyAndVerifyTransmissionPacket(packet)
 	if err != nil {
 		return ctx, nil, err
 	}
@@ -120,14 +118,7 @@ func DownloadDag(ctx context.Context, connectionManager ConnectionManager, conne
 		}
 		packet := merkle_dag.TransmissionPacketFromSerializable(&message.Packet)
 
-		err = packet.Leaf.VerifyLeaf()
-		if err != nil {
-			return ctx, nil, err
-		}
-
-		dag.ApplyTransmissionPacket(packet)
-
-		err = dag.Verify()
+		err = dag.ApplyAndVerifyTransmissionPacket(packet)
 		if err != nil {
 			return ctx, nil, err
 		}

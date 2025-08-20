@@ -22,7 +22,7 @@ type readOptions struct {
 
 func defaultReadOptions() *readOptions {
 	return &readOptions{
-		timeout:    10 * time.Second,
+		timeout:    300 * time.Second, // 5 minutes for large repository operations
 		maxRetries: 3,
 		retryDelay: 300 * time.Millisecond,
 	}
@@ -56,7 +56,7 @@ type writeOptions struct {
 
 func defaultWriteOptions() *writeOptions {
 	return &writeOptions{
-		timeout:    10 * time.Second,
+		timeout:    300 * time.Second, // 5 minutes for large repository operations
 		maxRetries: 3,
 		retryDelay: 300 * time.Millisecond,
 	}
@@ -218,7 +218,7 @@ func ReadMessageFromStream[T any](stream types.Stream, options ...ReadOption) (*
 
 func ReadEnvelopeFromStream(stream types.Stream, timeoutDuration time.Duration) (*types.MessageEnvelope, error) {
 	if timeoutDuration == 0 {
-		timeoutDuration = 5 * time.Second // Default timeout
+		timeoutDuration = 300 * time.Second // Default timeout increased for large repositories
 	}
 
 	// Create a channel to signal completion
@@ -312,7 +312,7 @@ func ReadJsonMessageFromStream[T any](stream types.Stream) (*T, error) {
 
 	var message T
 
-	timeout := time.NewTimer(5 * time.Second)
+	timeout := time.NewTimer(300 * time.Second) // Increased timeout for large operations
 
 wait:
 	for {
