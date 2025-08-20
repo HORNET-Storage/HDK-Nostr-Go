@@ -96,11 +96,6 @@ func DownloadDag(ctx context.Context, connectionManager ConnectionManager, conne
 
 	packet := merkle_dag.TransmissionPacketFromSerializable(&message.Packet)
 
-	err = packet.Leaf.VerifyRootLeaf()
-	if err != nil {
-		return ctx, nil, err
-	}
-
 	err = dag.ApplyAndVerifyTransmissionPacket(packet)
 	if err != nil {
 		return ctx, nil, err
@@ -111,29 +106,31 @@ func DownloadDag(ctx context.Context, connectionManager ConnectionManager, conne
 		return ctx, nil, err
 	}
 
-	for {
-		message, err := WaitForUploadMessage(stream)
-		if err != nil {
-			return ctx, nil, err
-		}
-		packet := merkle_dag.TransmissionPacketFromSerializable(&message.Packet)
+	if dag.Leafs[dag.Root].LeafCount > 0 {
+		for {
+			message, err := WaitForUploadMessage(stream)
+			if err != nil {
+				return ctx, nil, err
+			}
+			packet := merkle_dag.TransmissionPacketFromSerializable(&message.Packet)
 
-		err = dag.ApplyAndVerifyTransmissionPacket(packet)
-		if err != nil {
-			return ctx, nil, err
-		}
+			err = dag.ApplyAndVerifyTransmissionPacket(packet)
+			if err != nil {
+				return ctx, nil, err
+			}
 
-		err = WriteResponseToStream(stream, true)
-		if err != nil {
-			return ctx, nil, err
-		}
+			err = WriteResponseToStream(stream, true)
+			if err != nil {
+				return ctx, nil, err
+			}
 
-		if progressChan != nil {
-			progressChan <- types.DownloadProgress{ConnectionID: connectionID, LeafsRetreived: len(dag.Leafs)}
-		}
+			if progressChan != nil {
+				progressChan <- types.DownloadProgress{ConnectionID: connectionID, LeafsRetreived: len(dag.Leafs)}
+			}
 
-		if len(dag.Leafs) >= (dag.Leafs[dag.Root].LeafCount + 1) {
-			break
+			if len(dag.Leafs) >= (dag.Leafs[dag.Root].LeafCount + 1) {
+				break
+			}
 		}
 	}
 
