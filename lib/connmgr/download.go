@@ -94,9 +94,9 @@ func DownloadDag(ctx context.Context, connectionManager ConnectionManager, conne
 		Leafs: make(map[string]*merkle_dag.DagLeaf),
 	}
 
-	packet := merkle_dag.TransmissionPacketFromSerializable(&message.Packet)
+	packet := merkle_dag.BatchedTransmissionPacketFromSerializable(&message.Packet)
 
-	err = dag.ApplyAndVerifyTransmissionPacket(packet)
+	err = dag.ApplyAndVerifyBatchedTransmissionPacket(packet)
 	if err != nil {
 		return ctx, nil, err
 	}
@@ -112,9 +112,9 @@ func DownloadDag(ctx context.Context, connectionManager ConnectionManager, conne
 			if err != nil {
 				return ctx, nil, err
 			}
-			packet := merkle_dag.TransmissionPacketFromSerializable(&message.Packet)
+			packet := merkle_dag.BatchedTransmissionPacketFromSerializable(&message.Packet)
 
-			err = dag.ApplyAndVerifyTransmissionPacket(packet)
+			err = dag.ApplyAndVerifyBatchedTransmissionPacket(packet)
 			if err != nil {
 				return ctx, nil, err
 			}

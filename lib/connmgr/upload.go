@@ -53,7 +53,7 @@ func UploadDagSingle(ctx context.Context, connectionManager ConnectionManager, c
 
 	totalLeafs := len(dag.Leafs)
 	leafsSent := 0
-	sequence := dag.GetLeafSequence()
+	sequence := dag.GetBatchedLeafSequence()
 
 	for i, packet := range sequence {
 		message := types.UploadMessage{

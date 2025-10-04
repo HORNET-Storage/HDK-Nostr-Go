@@ -15,7 +15,7 @@ type MessageEnvelope struct {
 
 type UploadMessage struct {
 	Root      string
-	Packet    merkle_dag.SerializableTransmissionPacket
+	Packet    merkle_dag.SerializableBatchedTransmissionPacket
 	PublicKey string
 	Signature string
 }
