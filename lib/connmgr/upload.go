@@ -7,7 +7,7 @@ import (
 
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 
-	merkle_dag "github.com/HORNET-Storage/Scionic-Merkle-Tree/dag"
+	merkle_dag "github.com/HORNET-Storage/Scionic-Merkle-Tree/v2/dag"
 	types "github.com/HORNET-Storage/go-hornet-storage-lib/lib"
 	"github.com/HORNET-Storage/go-hornet-storage-lib/lib/signing"
 )
@@ -54,11 +54,13 @@ func UploadDagSingle(ctx context.Context, connectionManager ConnectionManager, c
 	totalLeafs := len(dag.Leafs)
 	leafsSent := 0
 	sequence := dag.GetBatchedLeafSequence()
+	total := len(sequence)
 
 	for i, packet := range sequence {
 		message := types.UploadMessage{
-			Root:   dag.Root,
-			Packet: *packet.ToSerializable(),
+			Root:          dag.Root,
+			Packet:        *packet.ToSerializable(),
+			IsFinalPacket: i == total-1, // Mark the last packet
 		}
 
 		// Only add the pub key and signature to the first packet as that's what contains the root

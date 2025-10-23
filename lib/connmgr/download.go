@@ -5,7 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 
-	merkle_dag "github.com/HORNET-Storage/Scionic-Merkle-Tree/dag"
+	merkle_dag "github.com/HORNET-Storage/Scionic-Merkle-Tree/v2/dag"
 	types "github.com/HORNET-Storage/go-hornet-storage-lib/lib"
 	"github.com/HORNET-Storage/go-hornet-storage-lib/lib/signing"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
@@ -106,7 +106,8 @@ func DownloadDag(ctx context.Context, connectionManager ConnectionManager, conne
 		return ctx, nil, err
 	}
 
-	if dag.Leafs[dag.Root].LeafCount > 0 {
+	// Continue receiving packets until we get the final one
+	if !message.IsFinalPacket {
 		for {
 			message, err := WaitForUploadMessage(stream)
 			if err != nil {
@@ -128,7 +129,8 @@ func DownloadDag(ctx context.Context, connectionManager ConnectionManager, conne
 				progressChan <- types.DownloadProgress{ConnectionID: connectionID, LeafsRetreived: len(dag.Leafs)}
 			}
 
-			if len(dag.Leafs) >= (dag.Leafs[dag.Root].LeafCount + 1) {
+			// Check if this is the final packet
+			if message.IsFinalPacket {
 				break
 			}
 		}

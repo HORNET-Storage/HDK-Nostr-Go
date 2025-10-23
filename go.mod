@@ -5,7 +5,7 @@ go 1.21
 toolchain go1.22.1
 
 require (
-	github.com/HORNET-Storage/Scionic-Merkle-Tree v1.3.7
+	github.com/HORNET-Storage/Scionic-Merkle-Tree/v2 v2.0.2
 	github.com/btcsuite/btcd/btcutil v1.1.3
 	github.com/fxamacker/cbor/v2 v2.5.0
 	github.com/libp2p/go-libp2p v0.35.1

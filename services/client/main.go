@@ -15,7 +15,7 @@ import (
 	"syscall"
 	"time"
 
-	merkle_dag "github.com/HORNET-Storage/Scionic-Merkle-Tree/dag"
+	merkle_dag "github.com/HORNET-Storage/Scionic-Merkle-Tree/v2/dag"
 	"github.com/HORNET-Storage/go-hornet-storage-lib/lib"
 	types "github.com/HORNET-Storage/go-hornet-storage-lib/lib"
 	"github.com/HORNET-Storage/go-hornet-storage-lib/lib/connmgr"

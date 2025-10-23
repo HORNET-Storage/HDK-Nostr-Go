@@ -3,7 +3,7 @@ package lib
 import (
 	"context"
 
-	merkle_dag "github.com/HORNET-Storage/Scionic-Merkle-Tree/dag"
+	merkle_dag "github.com/HORNET-Storage/Scionic-Merkle-Tree/v2/dag"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 )
@@ -14,10 +14,11 @@ type MessageEnvelope struct {
 }
 
 type UploadMessage struct {
-	Root      string
-	Packet    merkle_dag.SerializableBatchedTransmissionPacket
-	PublicKey string
-	Signature string
+	Root          string
+	Packet        merkle_dag.SerializableBatchedTransmissionPacket
+	PublicKey     string
+	Signature     string
+	IsFinalPacket bool // Indicates this is the last packet in the transmission
 }
 
 type DownloadMessage struct {
