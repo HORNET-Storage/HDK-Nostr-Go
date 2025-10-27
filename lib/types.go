@@ -35,7 +35,8 @@ type LeafLabelRange struct {
 
 type DownloadFilter struct {
 	LeafRanges     *LeafLabelRange
-	IncludeContent bool // IncludeContent from LeafLabelRange always overrides this
+	LeafHashes     []string
+	IncludeContent bool
 }
 
 type QueryFilter struct {

@@ -1,9 +1,6 @@
 package main
 
 import (
-	//"context"
-	//"encoding/json"
-
 	"bufio"
 	"context"
 	"encoding/json"
@@ -11,12 +8,13 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
 	merkle_dag "github.com/HORNET-Storage/Scionic-Merkle-Tree/v2/dag"
-	"github.com/HORNET-Storage/go-hornet-storage-lib/lib"
 	types "github.com/HORNET-Storage/go-hornet-storage-lib/lib"
 	"github.com/HORNET-Storage/go-hornet-storage-lib/lib/connmgr"
 	"github.com/HORNET-Storage/go-hornet-storage-lib/lib/signing"
@@ -60,15 +58,49 @@ func RunCommandWatcher(ctx context.Context) {
 		switch segments[0] {
 		case "help":
 			log.Println("Available Commands:")
-			log.Println("upload")
-			log.Println("download")
-			log.Println("event")
-			log.Println("keys")
-			log.Println("shutdown")
+			log.Println("upload <path>                                    - Upload a directory/file as DAG")
+			log.Println("download <root> <includeContent>                 - Download entire DAG (e.g., download <root> true)")
+			log.Println("download-range <root> <from> <to> <content>      - Download leaf range (e.g., download-range <root> 5 10 true)")
+			log.Println("download-hashes <root> <hash1,hash2,...> <content> - Download specific leaves (e.g., download-hashes <root> hash1,hash2 true)")
+			log.Println("reconstruct <root> <output_path>                 - Download DAG and reconstruct directory structure")
+			log.Println("query                                            - Query for DAGs")
+			log.Println("event                                            - Upload test event")
+			log.Println("keys                                             - Test key serialization")
+			log.Println("shutdown                                         - Shutdown client")
 		case "upload":
+			if len(segments) < 2 {
+				log.Println("Usage: upload <path>")
+				continue
+			}
 			UploadDag(ctx, segments[1])
 		case "download":
-			DownloadDag(ctx, segments[1])
+			if len(segments) < 3 {
+				log.Println("Usage: download <root> <includeContent>")
+				log.Println("Example: download bafyreiabc123... true")
+				continue
+			}
+			DownloadDag(ctx, segments[1], segments[2])
+		case "download-range":
+			if len(segments) < 5 {
+				log.Println("Usage: download-range <root> <from> <to> <includeContent>")
+				log.Println("Example: download-range bafyreiabc123... 5 10 true")
+				continue
+			}
+			DownloadDagWithRange(ctx, segments[1], segments[2], segments[3], segments[4])
+		case "download-hashes":
+			if len(segments) < 4 {
+				log.Println("Usage: download-hashes <root> <hash1,hash2,...> <includeContent>")
+				log.Println("Example: download-hashes bafyreiabc123... hash1,hash2,hash3 true")
+				continue
+			}
+			DownloadDagWithHashes(ctx, segments[1], segments[2], segments[3])
+		case "reconstruct":
+			if len(segments) < 3 {
+				log.Println("Usage: reconstruct <root> <output_path>")
+				log.Println("Example: reconstruct bafyreiabc123... ./output")
+				continue
+			}
+			ReconstructDirectory(ctx, segments[1], segments[2])
 		case "query":
 			QueryDag()
 		case "event":
@@ -89,21 +121,71 @@ func Cleanup(ctx context.Context) {
 
 }
 
+// FileMetadataProcessor captures file metadata and adds it to additional data
+func FileMetadataProcessor(path string, relPath string, entry os.DirEntry, isRoot bool, leafType merkle_dag.LeafType) map[string]string {
+	metadata := make(map[string]string)
+
+	// Get file info
+	info, err := entry.Info()
+	if err != nil {
+		// If we can't get info, return empty metadata
+		return metadata
+	}
+
+	// Add common metadata
+	metadata["relative_path"] = relPath
+	metadata["leaf_type"] = string(leafType)
+
+	// Add file-specific metadata
+	if leafType == merkle_dag.FileLeafType {
+		metadata["size"] = fmt.Sprintf("%d", info.Size())
+		metadata["modified_time"] = info.ModTime().Format(time.RFC3339)
+		metadata["mode"] = info.Mode().String()
+
+		// Add file extension if present
+		if ext := filepath.Ext(entry.Name()); ext != "" {
+			metadata["extension"] = ext
+		}
+	} else if leafType == merkle_dag.DirectoryLeafType {
+		metadata["modified_time"] = info.ModTime().Format(time.RFC3339)
+		metadata["mode"] = info.Mode().String()
+	}
+
+	// For root, add creation timestamp
+	if isRoot {
+		metadata["dag_created"] = time.Now().Format(time.RFC3339)
+	}
+
+	return metadata
+}
+
 func UploadDag(ctx context.Context, path string) {
-	// Create a new dag from a directory
-	dag, err := merkle_dag.CreateDag(path, false)
+	// Create a new dag from a directory using parallel processing
+	log.Println("Creating DAG with parallel processing...")
+	startTime := time.Now()
+
+	config := merkle_dag.ParallelConfig()
+	config.Processor = FileMetadataProcessor
+	dag, err := merkle_dag.CreateDagWithConfig(path, config)
+
+	dagCreationTime := time.Since(startTime)
 	if err != nil {
 		fmt.Println("Error: ", err)
 		os.Exit(1)
 	}
 
+	log.Printf("DAG created in %v (%d leaves)", dagCreationTime, len(dag.Leafs))
+
 	// Verify the entire dag
+	log.Println("Verifying DAG...")
+	verifyStartTime := time.Now()
 	err = dag.Verify()
 	if err != nil {
 		log.Fatalf("Error: %s", err)
 	}
+	verifyTime := time.Since(verifyStartTime)
 
-	log.Println("Dag verified correctly")
+	log.Printf("DAG verified correctly in %v", verifyTime)
 
 	publicKey, err := signing.DeserializePublicKey(npub)
 	if err != nil {
@@ -153,7 +235,7 @@ func UploadDag(ctx context.Context, path string) {
 		log.Fatal(err)
 	}
 
-	progressChan := make(chan lib.UploadProgress)
+	progressChan := make(chan types.UploadProgress)
 
 	go func() {
 		for progress := range progressChan {
@@ -176,7 +258,9 @@ func UploadDag(ctx context.Context, path string) {
 	conMgr.Disconnect("default")
 }
 
-func DownloadDag(ctx context.Context, root string) {
+func DownloadDag(ctx context.Context, root string, includeContentStr string) {
+	includeContent := includeContentStr == "true" || includeContentStr == "1"
+
 	// Connect to a hornet storage node
 	publicKey, err := signing.DeserializePublicKey(npub)
 	if err != nil {
@@ -200,7 +284,7 @@ func DownloadDag(ctx context.Context, root string) {
 		log.Fatal(err)
 	}
 
-	progressChan := make(chan lib.DownloadProgress)
+	progressChan := make(chan types.DownloadProgress)
 
 	go func() {
 		for progress := range progressChan {
@@ -212,7 +296,88 @@ func DownloadDag(ctx context.Context, root string) {
 		}
 	}()
 
-	_, dag, err := connmgr.DownloadDag(ctx, conMgr, "default", root, nil, nil, progressChan)
+	filter := &types.DownloadFilter{
+		IncludeContent: includeContent,
+	}
+
+	_, dag, err := connmgr.DownloadDag(ctx, conMgr, "default", root, nil, filter, progressChan)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	close(progressChan)
+
+	filename := "after_download.json"
+	if includeContent {
+		filename = "after_download_with_content.json"
+	}
+
+	jsonData, _ := json.Marshal(dag.Dag.ToSerializable())
+	os.WriteFile(filename, jsonData, 0644)
+
+	log.Printf("DAG saved to %s", filename)
+
+	conMgr.Disconnect("default")
+}
+
+func DownloadDagWithRange(ctx context.Context, root string, fromStr string, toStr string, includeContentStr string) {
+	from, err := strconv.Atoi(fromStr)
+	if err != nil {
+		log.Fatalf("Invalid 'from' value: %v", err)
+	}
+
+	to, err := strconv.Atoi(toStr)
+	if err != nil {
+		log.Fatalf("Invalid 'to' value: %v", err)
+	}
+
+	includeContent := includeContentStr == "true" || includeContentStr == "1"
+
+	// Connect to a hornet storage node
+	publicKey, err := signing.DeserializePublicKey(npub)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	libp2pPubKey, err := signing.ConvertPubKeyToLibp2pPubKey(publicKey)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	peerId, err := peer.IDFromPublicKey(*libp2pPubKey)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	conMgr := connmgr.NewGenericConnectionManager()
+
+	err = conMgr.ConnectWithLibp2p(ctx, "default", fmt.Sprintf("/ip4/127.0.0.1/udp/9000/quic-v1/p2p/%s", peerId.String()), libp2p.Transport(libp2pquic.NewTransport))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	filter := &types.DownloadFilter{
+		LeafRanges: &types.LeafLabelRange{
+			From: from,
+			To:   to,
+		},
+		IncludeContent: includeContent,
+	}
+
+	progressChan := make(chan types.DownloadProgress)
+
+	go func() {
+		for progress := range progressChan {
+			if progress.Error != nil {
+				fmt.Printf("Error downloading from %s: %v\n", progress.ConnectionID, progress.Error)
+			} else {
+				fmt.Printf("Progress for %s: %d leafs downloaded\n", progress.ConnectionID, progress.LeafsRetreived)
+			}
+		}
+	}()
+
+	log.Printf("Downloading leaves %d to %d (includeContent: %v)...", from, to, includeContent)
+	_, dag, err := connmgr.DownloadDag(ctx, conMgr, "default", root, nil, filter, progressChan)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -220,7 +385,141 @@ func DownloadDag(ctx context.Context, root string) {
 	close(progressChan)
 
 	jsonData, _ := json.Marshal(dag.Dag.ToSerializable())
-	os.WriteFile("after_download.json", jsonData, 0644)
+	filename := fmt.Sprintf("download_range_%d_%d.json", from, to)
+	os.WriteFile(filename, jsonData, 0644)
+	log.Printf("Downloaded partial DAG saved to %s", filename)
+
+	conMgr.Disconnect("default")
+}
+
+func DownloadDagWithHashes(ctx context.Context, root string, hashesStr string, includeContentStr string) {
+	hashes := strings.Split(hashesStr, ",")
+	if len(hashes) == 0 {
+		log.Fatal("No hashes provided")
+	}
+
+	includeContent := includeContentStr == "true" || includeContentStr == "1"
+
+	// Connect to a hornet storage node
+	publicKey, err := signing.DeserializePublicKey(npub)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	libp2pPubKey, err := signing.ConvertPubKeyToLibp2pPubKey(publicKey)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	peerId, err := peer.IDFromPublicKey(*libp2pPubKey)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	conMgr := connmgr.NewGenericConnectionManager()
+
+	err = conMgr.ConnectWithLibp2p(ctx, "default", fmt.Sprintf("/ip4/127.0.0.1/udp/9000/quic-v1/p2p/%s", peerId.String()), libp2p.Transport(libp2pquic.NewTransport))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	filter := &types.DownloadFilter{
+		LeafHashes:     hashes,
+		IncludeContent: includeContent,
+	}
+
+	progressChan := make(chan types.DownloadProgress)
+
+	go func() {
+		for progress := range progressChan {
+			if progress.Error != nil {
+				fmt.Printf("Error downloading from %s: %v\n", progress.ConnectionID, progress.Error)
+			} else {
+				fmt.Printf("Progress for %s: %d leafs downloaded\n", progress.ConnectionID, progress.LeafsRetreived)
+			}
+		}
+	}()
+
+	log.Printf("Downloading %d specific leaves (includeContent: %v)...", len(hashes), includeContent)
+	_, dag, err := connmgr.DownloadDag(ctx, conMgr, "default", root, nil, filter, progressChan)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	close(progressChan)
+
+	jsonData, _ := json.Marshal(dag.Dag.ToSerializable())
+	filename := fmt.Sprintf("download_hashes_%d_leaves.json", len(hashes))
+	os.WriteFile(filename, jsonData, 0644)
+	log.Printf("Downloaded partial DAG with %d leaves saved to %s", len(hashes), filename)
+
+	conMgr.Disconnect("default")
+}
+
+func ReconstructDirectory(ctx context.Context, root string, outputPath string) {
+	// Connect to a hornet storage node
+	publicKey, err := signing.DeserializePublicKey(npub)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	libp2pPubKey, err := signing.ConvertPubKeyToLibp2pPubKey(publicKey)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	peerId, err := peer.IDFromPublicKey(*libp2pPubKey)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	conMgr := connmgr.NewGenericConnectionManager()
+
+	err = conMgr.ConnectWithLibp2p(ctx, "default", fmt.Sprintf("/ip4/127.0.0.1/udp/9000/quic-v1/p2p/%s", peerId.String()), libp2p.Transport(libp2pquic.NewTransport))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	log.Println("Downloading DAG with full content...")
+	downloadStartTime := time.Now()
+
+	progressChan := make(chan types.DownloadProgress)
+
+	go func() {
+		for progress := range progressChan {
+			if progress.Error != nil {
+				fmt.Printf("Error downloading from %s: %v\n", progress.ConnectionID, progress.Error)
+			} else {
+				fmt.Printf("Progress for %s: %d leafs downloaded\n", progress.ConnectionID, progress.LeafsRetreived)
+			}
+		}
+	}()
+
+	// Download with content included
+	filter := &types.DownloadFilter{
+		IncludeContent: true,
+	}
+
+	_, dag, err := connmgr.DownloadDag(ctx, conMgr, "default", root, nil, filter, progressChan)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	close(progressChan)
+	downloadTime := time.Since(downloadStartTime)
+	log.Printf("DAG downloaded in %v (%d leaves)", downloadTime, len(dag.Dag.Leafs))
+
+	// Reconstruct directory structure
+	log.Printf("Reconstructing directory structure to: %s", outputPath)
+	reconstructStartTime := time.Now()
+
+	err = dag.Dag.CreateDirectory(outputPath)
+	if err != nil {
+		log.Fatalf("Failed to reconstruct directory: %v", err)
+	}
+
+	reconstructTime := time.Since(reconstructStartTime)
+	log.Printf("Directory reconstructed in %v", reconstructTime)
 
 	conMgr.Disconnect("default")
 }
