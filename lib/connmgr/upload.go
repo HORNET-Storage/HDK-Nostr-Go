@@ -79,7 +79,7 @@ func UploadDagSingle(ctx context.Context, connectionManager ConnectionManager, c
 
 		response, err := WaitForResponse(stream)
 		if err != nil {
-			err = fmt.Errorf("failed to recieve response: %e", err)
+			err = fmt.Errorf("failed to receive response: %w", err)
 
 			if progressChan != nil {
 				progressChan <- types.UploadProgress{ConnectionID: connectionID, LeafsSent: leafsSent, TotalLeafs: totalLeafs, Error: err}
@@ -89,7 +89,7 @@ func UploadDagSingle(ctx context.Context, connectionManager ConnectionManager, c
 		}
 
 		if !response.Ok {
-			err = fmt.Errorf("did not recieve a valid response: %e", err)
+			err = fmt.Errorf("did not receive a valid response: %w", err)
 
 			if progressChan != nil {
 				progressChan <- types.UploadProgress{ConnectionID: connectionID, LeafsSent: leafsSent, TotalLeafs: totalLeafs, Error: err}
@@ -103,28 +103,6 @@ func UploadDagSingle(ctx context.Context, connectionManager ConnectionManager, c
 		if progressChan != nil {
 			progressChan <- types.UploadProgress{ConnectionID: connectionID, LeafsSent: leafsSent, TotalLeafs: totalLeafs}
 		}
-	}
-
-	// Wait for final success response after server completes storage
-	finalResponse, err := WaitForResponse(stream)
-	if err != nil {
-		err = fmt.Errorf("failed to receive final response after storage: %w", err)
-
-		if progressChan != nil {
-			progressChan <- types.UploadProgress{ConnectionID: connectionID, LeafsSent: leafsSent, TotalLeafs: totalLeafs, Error: err}
-		}
-
-		return err
-	}
-
-	if !finalResponse.Ok {
-		err = fmt.Errorf("final response indicated failure")
-
-		if progressChan != nil {
-			progressChan <- types.UploadProgress{ConnectionID: connectionID, LeafsSent: leafsSent, TotalLeafs: totalLeafs, Error: err}
-		}
-
-		return err
 	}
 
 	return nil
