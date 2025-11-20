@@ -6,11 +6,44 @@ import (
 	"io"
 	"log"
 	"reflect"
+	"strings"
 	"time"
 
 	types "github.com/HORNET-Storage/go-hornet-storage-lib/lib"
 	"github.com/fxamacker/cbor/v2"
 )
+
+// isTerminalError checks if an error represents a terminal condition that should not be retried
+func isTerminalError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	errStr := err.Error()
+
+	// These are normal stream closure conditions, not actual errors
+	terminalConditions := []string{
+		"stream reset",
+		"stream closed",
+		"Application error 0x0",
+		"connection reset",
+		"EOF",
+		io.EOF.Error(),
+	}
+
+	for _, condition := range terminalConditions {
+		if strings.Contains(errStr, condition) {
+			return true
+		}
+	}
+
+	// Also check if it's actually io.EOF
+	if err == io.EOF {
+		return true
+	}
+
+	return false
+}
 
 type ReadOption func(*readOptions)
 
@@ -102,14 +135,21 @@ func BuildResponseMessage(response bool) types.ResponseMessage {
 }
 
 func WriteErrorToStream(stream types.Stream, message string, err error) error {
-	log.Println("\n====[STREAM ERROR MESSAGE]====")
-	if len(message) > 0 {
-		log.Println(message)
-	}
-	if err != nil {
+	// Don't log terminal errors as they're expected during normal connection closure
+	if err != nil && !isTerminalError(err) {
+		log.Println("\n====[STREAM ERROR MESSAGE]====")
+		if len(message) > 0 {
+			log.Println(message)
+		}
 		log.Println(err)
+		log.Println("")
+	} else {
+		log.Println("\n====[STREAM ERROR MESSAGE]====")
+		if len(message) > 0 {
+			log.Println(message)
+		}
+		log.Println("")
 	}
-	log.Println("")
 
 	return WriteMessageToStream(stream, BuildErrorMessage(message, err))
 }
@@ -148,8 +188,11 @@ func ReadMessageFromStream[T any](stream types.Stream, options ...ReadOption) (*
 	var lastErr error
 	for attempt := 0; attempt <= opts.maxRetries; attempt++ {
 		if attempt > 0 {
-			log.Printf("Retrying read (attempt %d/%d) after error: %v",
-				attempt, opts.maxRetries, lastErr)
+			// Only log retry if it's not a terminal error
+			if !isTerminalError(lastErr) {
+				log.Printf("Retrying read (attempt %d/%d) after error: %v",
+					attempt, opts.maxRetries, lastErr)
+			}
 
 			time.Sleep(opts.retryDelay)
 		}
@@ -157,7 +200,8 @@ func ReadMessageFromStream[T any](stream types.Stream, options ...ReadOption) (*
 		envelope, err := ReadEnvelopeFromStream(stream, opts.timeout)
 		if err != nil {
 			lastErr = err
-			if opts.maxRetries == 0 || attempt == opts.maxRetries {
+			// Don't retry on terminal errors (stream closure, EOF, etc.)
+			if isTerminalError(err) || opts.maxRetries == 0 || attempt == opts.maxRetries {
 				return nil, err
 			}
 			continue
@@ -167,7 +211,7 @@ func ReadMessageFromStream[T any](stream types.Stream, options ...ReadOption) (*
 			errorBytes, err := cbor.Marshal(envelope.Payload)
 			if err != nil {
 				lastErr = fmt.Errorf("failed to marshal error payload: %w", err)
-				if opts.maxRetries == 0 || attempt == opts.maxRetries {
+				if isTerminalError(err) || opts.maxRetries == 0 || attempt == opts.maxRetries {
 					return nil, lastErr
 				}
 				continue
@@ -176,7 +220,7 @@ func ReadMessageFromStream[T any](stream types.Stream, options ...ReadOption) (*
 			var errorMsg types.ErrorMessage
 			if err := cbor.Unmarshal(errorBytes, &errorMsg); err != nil {
 				lastErr = fmt.Errorf("failed to unmarshal error payload: %w", err)
-				if opts.maxRetries == 0 || attempt == opts.maxRetries {
+				if isTerminalError(err) || opts.maxRetries == 0 || attempt == opts.maxRetries {
 					return nil, lastErr
 				}
 				continue
@@ -195,7 +239,7 @@ func ReadMessageFromStream[T any](stream types.Stream, options ...ReadOption) (*
 		payloadBytes, err := cbor.Marshal(envelope.Payload)
 		if err != nil {
 			lastErr = fmt.Errorf("failed to marshal payload: %w", err)
-			if opts.maxRetries == 0 || attempt == opts.maxRetries {
+			if isTerminalError(err) || opts.maxRetries == 0 || attempt == opts.maxRetries {
 				return nil, lastErr
 			}
 			continue
@@ -204,7 +248,7 @@ func ReadMessageFromStream[T any](stream types.Stream, options ...ReadOption) (*
 		var message T
 		if err := cbor.Unmarshal(payloadBytes, &message); err != nil {
 			lastErr = fmt.Errorf("failed to unmarshal payload to %T: %w", message, err)
-			if opts.maxRetries == 0 || attempt == opts.maxRetries {
+			if isTerminalError(err) || opts.maxRetries == 0 || attempt == opts.maxRetries {
 				return nil, lastErr
 			}
 			continue // Retry
@@ -265,9 +309,11 @@ func WriteMessageToStream[T any](stream types.Stream, message T, options ...Writ
 	var lastErr error
 	for attempt := 0; attempt <= opts.maxRetries; attempt++ {
 		if attempt > 0 {
-			// Log retry attempt
-			log.Printf("Retrying write (attempt %d/%d) after error: %v",
-				attempt, opts.maxRetries, lastErr)
+			// Only log retry if it's not a terminal error
+			if !isTerminalError(lastErr) {
+				log.Printf("Retrying write (attempt %d/%d) after error: %v",
+					attempt, opts.maxRetries, lastErr)
+			}
 
 			// Wait before retry if this isn't the first attempt
 			time.Sleep(opts.retryDelay)
@@ -289,7 +335,8 @@ func WriteMessageToStream[T any](stream types.Stream, message T, options ...Writ
 		case <-done:
 			if writeErr != nil {
 				lastErr = writeErr
-				if opts.maxRetries == 0 || attempt == opts.maxRetries {
+				// Don't retry on terminal errors (stream closure, etc.)
+				if isTerminalError(writeErr) || opts.maxRetries == 0 || attempt == opts.maxRetries {
 					return writeErr
 				}
 				continue // Retry
