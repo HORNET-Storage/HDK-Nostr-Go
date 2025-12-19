@@ -135,20 +135,13 @@ func BuildResponseMessage(response bool) types.ResponseMessage {
 }
 
 func WriteErrorToStream(stream types.Stream, message string, err error) error {
-	// Don't log terminal errors as they're expected during normal connection closure
-	if err != nil && !isTerminalError(err) {
-		log.Println("\n====[STREAM ERROR MESSAGE]====")
-		if len(message) > 0 {
-			log.Println(message)
-		}
-		log.Println(err)
-		log.Println("")
-	} else {
-		log.Println("\n====[STREAM ERROR MESSAGE]====")
-		if len(message) > 0 {
-			log.Println(message)
-		}
-		log.Println("")
+	// Use quieter logging for terminal errors (expected during normal connection closure)
+	if err != nil && isTerminalError(err) {
+		log.Printf("[stream] Client disconnected: %s", message)
+	} else if err != nil {
+		log.Printf("[stream error] %s: %v", message, err)
+	} else if len(message) > 0 {
+		log.Printf("[stream error] %s", message)
 	}
 
 	return WriteMessageToStream(stream, BuildErrorMessage(message, err))

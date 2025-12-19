@@ -66,27 +66,27 @@ func DownloadDag(ctx context.Context, connectionManager ConnectionManager, conne
 
 	message, err := WaitForUploadMessage(stream)
 	if err != nil {
-		return ctx, nil, err
+		return ctx, nil, fmt.Errorf("WaitForUploadMessage failed: %w", err)
 	}
 
 	dagPublicKey, err := signing.DeserializePublicKey(message.PublicKey)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("DeserializePublicKey failed: %w", err)
 	}
 
 	signatureBytes, err := hex.DecodeString(message.Signature)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("hex.DecodeString signature failed: %w", err)
 	}
 
 	dagSignature, err := schnorr.ParseSignature(signatureBytes)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("ParseSignature failed: %w", err)
 	}
 
 	err = signing.VerifySerializedCIDSignature(dagSignature, message.Root, dagPublicKey)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("VerifySerializedCIDSignature failed for root %s: %w", message.Root, err)
 	}
 
 	dag := &merkle_dag.Dag{
@@ -98,12 +98,12 @@ func DownloadDag(ctx context.Context, connectionManager ConnectionManager, conne
 
 	err = dag.ApplyAndVerifyBatchedTransmissionPacket(packet)
 	if err != nil {
-		return ctx, nil, err
+		return ctx, nil, fmt.Errorf("ApplyAndVerifyBatchedTransmissionPacket failed: %w", err)
 	}
 
 	err = WriteResponseToStream(stream, true)
 	if err != nil {
-		return ctx, nil, err
+		return ctx, nil, fmt.Errorf("WriteResponseToStream failed: %w", err)
 	}
 
 	// Continue receiving packets until we get the final one
