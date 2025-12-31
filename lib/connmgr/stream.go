@@ -128,9 +128,14 @@ func BuildErrorMessage(message string, err error) types.ErrorMessage {
 	}
 }
 
-func BuildResponseMessage(response bool) types.ResponseMessage {
+func BuildResponseMessage(response bool, message ...string) types.ResponseMessage {
+	msg := ""
+	if len(message) > 0 {
+		msg = message[0]
+	}
 	return types.ResponseMessage{
-		Ok: response,
+		Ok:      response,
+		Message: msg,
 	}
 }
 
@@ -144,7 +149,16 @@ func WriteErrorToStream(stream types.Stream, message string, err error) error {
 		log.Printf("[stream error] %s", message)
 	}
 
-	return WriteMessageToStream(stream, BuildErrorMessage(message, err))
+	// Build the error message string
+	errMsg := message
+	if err != nil && message != "" {
+		errMsg = fmt.Sprintf("%s: %v", message, err)
+	} else if err != nil {
+		errMsg = err.Error()
+	}
+
+	// Send as ResponseMessage with Ok=false so client can read it properly
+	return WriteMessageToStream(stream, BuildResponseMessage(false, errMsg))
 }
 
 func WriteResponseToStream(stream types.Stream, response bool) error {

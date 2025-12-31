@@ -69,7 +69,8 @@ type BlockData struct {
 }
 
 type ResponseMessage struct {
-	Ok bool
+	Ok      bool
+	Message string
 }
 
 type ErrorMessage struct {
