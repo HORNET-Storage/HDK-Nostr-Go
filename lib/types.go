@@ -77,6 +77,12 @@ type ErrorMessage struct {
 	Message string
 }
 
+type ClaimOwnershipMessage struct {
+	Root      string
+	PublicKey string
+	Signature string
+}
+
 type TagFilter struct {
 	Tags    map[string]string
 	OrderBy string

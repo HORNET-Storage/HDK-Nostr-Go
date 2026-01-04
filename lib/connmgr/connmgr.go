@@ -13,9 +13,10 @@ import (
 )
 
 const (
-	UploadID   string = "/upload"
-	DownloadID string = "/download"
-	QueryID    string = "/query"
+	UploadID         string = "/upload"
+	DownloadID       string = "/download"
+	QueryID          string = "/query"
+	ClaimOwnershipID string = "/claim-ownership"
 )
 
 type ConnectionManager interface {
