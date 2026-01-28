@@ -242,12 +242,6 @@ func ReadMessageFromStream[T any](stream types.Stream, options ...ReadOption) (*
 				continue
 			}
 
-			log.Println("\n====[STREAM ERROR MESSAGE]====")
-			if len(errorMsg.Message) > 0 {
-				log.Println(errorMsg.Message)
-			}
-			log.Println("")
-
 			lastErr = fmt.Errorf("remote error: %s", errorMsg.Message)
 			return nil, lastErr
 		}
