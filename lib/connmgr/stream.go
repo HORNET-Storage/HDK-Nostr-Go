@@ -157,8 +157,17 @@ func WriteErrorToStream(stream types.Stream, message string, err error) error {
 		errMsg = err.Error()
 	}
 
-	// Send as ResponseMessage with Ok=false so client can read it properly
-	return WriteMessageToStream(stream, BuildResponseMessage(false, errMsg))
+	errorPayload := types.ErrorMessage{
+		Message: errMsg,
+	}
+
+	envelope := types.MessageEnvelope{
+		Type:    "error",
+		Payload: errorPayload,
+	}
+
+	enc := cbor.NewEncoder(stream)
+	return enc.Encode(&envelope)
 }
 
 func WriteResponseToStream(stream types.Stream, response bool) error {
